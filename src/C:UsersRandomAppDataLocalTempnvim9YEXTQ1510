@@ -1,17 +1,6 @@
 /*
  * I'm very much aware all the types here are nearly the same
  * thing...
- *
- * @NOTE jerry:
- * I do not advocate ever programming like this.
- * This is just what happens when I try to go as fast as I can,
- * and it doesn't go so greatly.
- *
- * "Because UNLESS someone like you cares a whole awful lot. It's
- *  not going to get better. It's not..."
- *
- *  Also why did I not use templates...
- *  I'm going to be honest I kind of forgot lmao.
  */
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
@@ -27,8 +16,8 @@
 static constexpr unsigned int virtual_window_width = 1024;
 static constexpr unsigned int virtual_window_height = 768;
 
-static constexpr unsigned int window_width = 1440;
-static constexpr unsigned int window_height = 900;
+static constexpr unsigned int window_width = 1024;
+static constexpr unsigned int window_height = 768;
 
 static bool game_running = true;
 
@@ -42,16 +31,6 @@ enum font_sizes{
 
 namespace gfx{
     TTF_Font* fonts[FONT_SIZE_TYPES];
-    SDL_Texture* circle_texture;
-
-    SDL_Texture* load_image_to_texture(SDL_Renderer* renderer, const char* path){
-        SDL_Surface* surface = IMG_Load(path);
-        SDL_Texture* result = 
-            SDL_CreateTextureFromSurface(renderer, surface);
-        SDL_FreeSurface(surface);
-
-        return result;
-    }
 
     struct color{
         uint8_t r;
@@ -73,23 +52,6 @@ namespace gfx{
         float h;
     };
 
-    static void render_circle(
-            SDL_Renderer* renderer,
-            float x, float y,
-            float radius,
-            const color c){
-        SDL_Rect as_sdl_rect = {
-            x - radius,
-            y - radius,
-            radius*2, 
-            radius*2,
-        };
-
-        SDL_SetTextureColorMod(circle_texture, c.r, c.g, c.b);
-        SDL_SetTextureAlphaMod(circle_texture, c.a);
-        SDL_RenderCopy(renderer, circle_texture, NULL, &as_sdl_rect);
-    }
-
     static void render_rectangle(
             SDL_Renderer* renderer, 
             const rectangle rect,
@@ -100,7 +62,6 @@ namespace gfx{
             rect.w,
             rect.h
         };
-
         SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
         SDL_RenderFillRect(renderer, &as_sdl_rect);
     }
@@ -317,9 +278,6 @@ namespace game{
         float h;
 
         float speed;
-
-        float damage;
-        float defense_damage;
     };
 
     struct turret_unit{
@@ -335,8 +293,6 @@ namespace game{
 
         float defense;
         float max_defense;
-
-        float targetting_radius;
     };
 
     static constexpr size_t MAX_ENEMIES_IN_GAME = 512;
@@ -421,55 +377,7 @@ namespace game{
         game_state.wave_spawn_list_entry_count++;
     }
 
-    static void push_turret_unit(state& game_state,
-            const int x,
-            const int y,
-            turret_unit to_place){
-        unsigned free_index = 0;
-        {
-            for(unsigned turret_entry = 0;
-                turret_entry < MAX_TURRETS_IN_GAME;
-                ++turret_entry){
-                turret_unit* current_turret = 
-                    &game_state.turret_units[turret_entry];
-                if(current_turret->type == TURRET_NULL){
-                    free_index = turret_entry;
-                    break;
-                }
-            }
-        }
-
-        turret_unit* free_unit = 
-            &game_state.turret_units[free_index];
-
-        (*free_unit) = to_place;
-
-        free_unit->x = x;
-        free_unit->y = y;
-    }
-
-    static void place_selected_unit(state& game_state,
-            const int mouse_x,
-            const int mouse_y){
-        // for now just plant a dumb single shooter.
-        // this can fail btw? 
-        turret_unit to_place = {};
-        to_place.type = TURRET_SINGLE_SHOOTER;
-        to_place.w = 64;
-        to_place.h = 64;
-        to_place.health = 100;
-        to_place.max_health = 100;
-
-        to_place.targetting_radius = 150;
-
-        to_place.defense = 100;
-        to_place.max_defense = 100;
-        if(game_state.points - 300 >= 0){
-            push_turret_unit(game_state, mouse_x - (to_place.w / 2), mouse_y - (to_place.h / 2), to_place);
-            game_state.points -= 300;
-        }else{
-
-        }
+    static void place_selected_unit(game_state, mouse_x, mouse_y){
     }
 
     static enemy_entity generate_enemy_of_type(enemy_type type, float x, float y){
@@ -594,6 +502,11 @@ namespace game{
             game_state.tree.x = (1024 / 2) - (game_state.tree.w/2);
             game_state.tree.y = (768 / 2) - (game_state.tree.h/2);
         }
+        // test wave init
+        {
+            generate_wave(game_state);
+        }
+
         // should be enough to build a few units or something like that.
         game_state.points = 3000;
 
@@ -614,23 +527,9 @@ namespace game{
             for(unsigned enemy_entry = 0;
                 enemy_entry < MAX_ENEMIES_IN_GAME;
                 ++enemy_entry){
-                game_state.wave_spawn_list[enemy_entry] = wave_spawn_list_entry {};
-                game_state.enemies[enemy_entry] = enemy_entity{};
+                game_state.wave_spawn_list[enemy_entry].type = ENEMY_NULL;
+                game_state.enemies[enemy_entry].type = ENEMY_NULL;
             }
-
-            game_state.wave_spawn_timer = 0;
-            game_state.wave_spawn_list_entry_count = 0;
-            game_state.enemies_in_wave = 0;
-            game_state.time_until_wave_ends = 0;
-            game_state.preparation_timer = 0;
-
-            game_state.game_wave = 0;
-            game_state.wave_started = false;
-        }
-
-        // test wave init
-        {
-            generate_wave(game_state);
         }
     }
 
@@ -649,14 +548,12 @@ namespace game{
                 uint8_t button = event->button.button;
 
                 if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
-                    if(button_down){
-                        if(button == SDL_BUTTON_LEFT){
-                            // place selected unit and pay.
-                            place_selected_unit(game_state, mouse_x, mouse_y);
-                        }else if(button == SDL_BUTTON_MIDDLE){
-                        }else if(button == SDL_BUTTON_RIGHT){
-                            // destroy selected unit and refund.
-                        }
+                    if(button == SDL_BUTTON_LEFT){
+                        // place selected unit and pay.
+                        place_selected_unit(game_state, mouse_x, mouse_y);
+                    }else if(button == SDL_BUTTON_MIDDLE){
+                    }else if(button == SDL_BUTTON_RIGHT){
+                        // destroy selected unit and refund.
                     }
                 }
             }
@@ -947,17 +844,6 @@ namespace game{
                     &game_state.turret_units[turret_entry];
 
                 if(current_unit->type != TURRET_NULL){
-                    // everything is still top left aligned....
-                    //
-                    // I have to actually hack in the calculations
-                    // because nothing is centered.... Damn.
-                    gfx::color circle_color = gfx::blue;
-                    circle_color.a = 100;
-                    gfx::render_circle(renderer,
-                            current_unit->x + (current_unit->w / 2),
-                            current_unit->y + (current_unit->h / 2),
-                            current_unit->targetting_radius,
-                            circle_color);
                     gfx::render_rectangle(renderer, 
                             {
                             current_unit->x,
@@ -1069,7 +955,6 @@ namespace game{
         // handle wave spawning
         // and other wave logic.
         {
-            fprintf(stderr, "wave_spawn_timer: %3.3f\n", game_state.wave_spawn_timer);
             game_state.wave_spawn_timer -= delta_time;
             // spawn from the first thing in the list.
             if(game_state.wave_spawn_timer <= 0.0f){
@@ -1082,7 +967,6 @@ namespace game{
                         &game_state.wave_spawn_list[wave_entry];
 
                     if(entry->type != ENEMY_NULL){
-                        fprintf(stderr, "spawn\n");
                         // actually spawn...
                         {
                             enemy_entity to_spawn =
@@ -1211,17 +1095,6 @@ int main(int argc, char** argv){
 
     game::initialize(state, renderer);
 
-    gfx::circle_texture = 
-        gfx::load_image_to_texture(renderer, "data/circle.png");
-
-    // too lazy to implement my
-    // own independent resolution.
-    //
-    // SDL2 pls work good enough.
-    SDL_RenderSetLogicalSize(renderer, 
-            virtual_window_width,
-            virtual_window_height);
-
     while(game_running){
         SDL_Event event;
         while(SDL_PollEvent(&event)){
@@ -1248,7 +1121,7 @@ int main(int argc, char** argv){
         }
         game::update(state, delta_time);
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
         SDL_RenderClear(renderer);
 
         game::render(state, renderer);

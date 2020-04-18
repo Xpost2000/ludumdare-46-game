@@ -2,6 +2,11 @@ Ludum Dare 46 :Scratch Board:
 
 KEEP IT ALIVE
 
+Game should be called:
+
+( Kind of misleading because you don't actually plant things )
+Reforestation...
+
 THOUGHTS:
 This is the file that contains all of my scratch board ideas in text.
 Org mode EMACS 26, and maybe summaries.
@@ -33,6 +38,7 @@ Day 1:
 - [ ] Randomized Enemy Spawns
 - [ ] Unit Selection From List
 - [ ] Placing my first units.
+- [ ] floating message for "No you cannot purchase this!"
 - [ ] Killable Enemies
 - [ ] Having bosses?
 - [ ] Particle System
@@ -46,7 +52,7 @@ Day 1:
 - [ ] Art begins....
 - [ ] Audio production begins....
 Day 2: The game better be finished.
-- [ ] Resolution Independence?
+- [X] Resolution Independence? THX SDL2 I LOVE YOU SO MUCH FOR DOING THIS SO EASILY
 - [ ] Polish up art
 - [ ] Music / Sound Effects
 - [ ] Packaging / Distribution
