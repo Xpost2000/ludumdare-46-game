@@ -749,6 +749,8 @@ namespace game{
 int main(int argc, char** argv){
     SDL_Init(SDL_INIT_VIDEO);
     IMG_Init(IMG_INIT_PNG);
+    Mix_Init(MIX_INIT_OGG);
+    Mix_OpenAudio(MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 2048);
     TTF_Init();
 
     SDL_Window* window =
@@ -814,6 +816,8 @@ int main(int argc, char** argv){
         delta_time = 1/60.0f;//(difference / 1000.0f);
     }
 
+    Mix_CloseAudio();
+    Mix_Quit();
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
