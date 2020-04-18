@@ -247,7 +247,16 @@ namespace game{
 
     static constexpr size_t MAX_ENEMIES_IN_GAME = 512;
 
+    // mostly for button presses.
+    struct input_state{
+        bool escape_down;
+        bool w_down;
+        bool return_down;
+    };
+
     struct state{
+        input_state last_input;
+        input_state input; 
         game_screen_state screen;
 
 #if 0
@@ -265,61 +274,6 @@ namespace game{
 
         tree_entity tree;
     };
-
-    static void handle_mouse_input(state& game_state, SDL_Event* event){
-        int mouse_x = 0;
-        int mouse_y = 0;
-
-        switch(event->type){
-            case SDL_MOUSEBUTTONDOWN:
-            case SDL_MOUSEBUTTONUP:
-            {
-                mouse_x = event->button.x;
-                mouse_y = event->button.y;
-
-                bool button_down = event->type == SDL_MOUSEBUTTONDOWN;
-                uint8_t button = event->button.button;
-
-                if(button == SDL_BUTTON_LEFT){
-                }else if(button == SDL_BUTTON_MIDDLE){
-                }else if(button == SDL_BUTTON_RIGHT){
-                }
-            }
-            break;
-            case SDL_MOUSEMOTION:
-            {
-                mouse_x = event->motion.x;
-                mouse_y = event->motion.y;
-            }
-            break;
-        }
-    }
-
-    static void handle_key_input(state& game_state, SDL_Event* event){
-        int scancode = event->key.keysym.scancode;
-        bool keydown = event->type == SDL_KEYDOWN;
-        switch(scancode){
-            case SDL_SCANCODE_W:
-            {
-                game_state.tree.health -= 10;
-            }
-            break;
-            case SDL_SCANCODE_RETURN:
-            {
-                if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
-                    game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
-                }
-            }
-            break;
-            case SDL_SCANCODE_ESCAPE:
-            {
-                if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
-                    game_running = false;
-                }
-            }
-            break;
-        }
-    }
 
     /*
      * @TODO jerry:
@@ -363,13 +317,7 @@ namespace game{
                 });
     }
 
-    static void initialize(state& game_state, SDL_Renderer* renderer){
-        static int font_sizes_array[FONT_SIZE_TYPES] = 
-        { 16, 32, 64 };
-        for(int i = 0; i < FONT_SIZE_TYPES; ++i){
-            gfx::fonts[i] = TTF_OpenFont("data/pixel_font.ttf", font_sizes_array[i]);
-        }
-
+    static void setup_game(state& game_state){
         // tree init
         {
             game_state.tree.health = 150;
@@ -390,7 +338,121 @@ namespace game{
         }
     }
 
+    static void handle_mouse_input(state& game_state, SDL_Event* event){
+        int mouse_x = 0;
+        int mouse_y = 0;
+
+        switch(event->type){
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
+            {
+                mouse_x = event->button.x;
+                mouse_y = event->button.y;
+
+                bool button_down = event->type == SDL_MOUSEBUTTONDOWN;
+                uint8_t button = event->button.button;
+
+                if(button == SDL_BUTTON_LEFT){
+                }else if(button == SDL_BUTTON_MIDDLE){
+                }else if(button == SDL_BUTTON_RIGHT){
+                }
+            }
+            break;
+            case SDL_MOUSEMOTION:
+            {
+                mouse_x = event->motion.x;
+                mouse_y = event->motion.y;
+            }
+            break;
+        }
+    }
+
+    static void handle_input(state& game_state, const float delta_time){
+        if(!game_state.input.w_down &&
+           game_state.last_input.w_down){
+            game_state.tree.health -= 10;
+        }
+
+        if(!game_state.input.escape_down &&
+           game_state.last_input.escape_down){
+            if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
+                game_running = false;
+            }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
+                game_state.screen = GAME_SCREEN_STATE_MAIN_MENU;
+            }
+        }
+
+        if(!game_state.input.return_down &&
+           game_state.last_input.return_down){
+            if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
+                game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
+                setup_game(game_state);
+            }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
+                game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
+                setup_game(game_state);
+            }
+        }
+    }
+
+    static void handle_key_input(state& game_state, SDL_Event* event){
+        int scancode = event->key.keysym.scancode;
+        bool keydown = event->type == SDL_KEYDOWN;
+
+        switch(scancode){
+            case SDL_SCANCODE_W:
+            {
+                game_state.input.w_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_RETURN:
+            {
+                game_state.input.return_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_ESCAPE:
+            {
+                game_state.input.escape_down = keydown;
+            }
+            break;
+        }
+    }
+
+    static void initialize(state& game_state, SDL_Renderer* renderer){
+        static int font_sizes_array[FONT_SIZE_TYPES] = 
+        { 16, 32, 64 };
+        for(int i = 0; i < FONT_SIZE_TYPES; ++i){
+            gfx::fonts[i] = TTF_OpenFont("data/pixel_font.ttf", font_sizes_array[i]);
+        }
+    }
+
     static void render_gameover(state& game_state, SDL_Renderer* renderer){
+        static float heading_text_scale = 1.0f; 
+        heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
+        printf("%3.3f\n", heading_text_scale);
+        render_centered_dynamically_scaled_text(
+                renderer,
+                FONT_SIZE_MEDIUM,
+                heading_text_scale,
+                1024,
+                300,
+                "Game Over!",
+                gfx::yellow);
+
+        render_centered_text(
+                renderer,
+                FONT_SIZE_MEDIUM,
+                1024,
+                768,
+                "Enter to Restart Game",
+                gfx::white);
+
+        render_centered_text(
+                renderer,
+                FONT_SIZE_MEDIUM,
+                1024,
+                900,
+                "Escape to Return to Menu",
+                gfx::white);
     }
 
     static void render_mainmenu(state& game_state, SDL_Renderer* renderer){
@@ -644,9 +706,17 @@ namespace game{
                 }
             }
         }
+
+        // check if game lost
+        if(game_state.tree.health <= 0){
+            game_state.enemies_in_wave = 0;
+            game_state.screen = GAME_SCREEN_STATE_GAME_OVER;
+        }
     }
 
     static void update(state& game_state, const float delta_time){
+        /* game_state.input = input_state{}; */
+        handle_input(game_state, delta_time);
         switch(game_state.screen){
             case GAME_SCREEN_STATE_MAIN_MENU:
             {
@@ -672,6 +742,7 @@ namespace game{
             }
             break;
         }
+        game_state.last_input = game_state.input;
     }
 }
 
@@ -729,7 +800,7 @@ int main(int argc, char** argv){
         }
         game::update(state, delta_time);
 
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
         SDL_RenderClear(renderer);
 
         game::render(state, renderer);

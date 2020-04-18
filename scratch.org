@@ -11,9 +11,45 @@ make the menu look cooler,
 
 and make it resolution independent.
 
+I should probably show cards depicting the enemies
+that are going to show up in the round.
+
+That way the strategy part seems fairer?
+
+Also to make the game less easy I should probably have enemies
+try to target turrets if they're closer than the tree sometimes.
+
+Maybe there should be an upgrade system, to like... Water the tree
+or give it fertilizer or build fencing so it doesn't get hurt as easily
+
 Day 0:
+
+Basic mechanics... Basic screens
+
 Day 1:
-Day 2:
+- [ ] Spawn Enemies with circle
+- [ ] Actually having a spawner.
+- [ ] Unit Selection From List
+- [ ] Randomized Enemy Spawns
+- [ ] Killable Enemies
+- [ ] Having bosses?
+- [ ] Particle System
+- [ ] Sprites & Animation
+- [ ] Preview Screen for Wave
+- [ ] Prep time....
+- [ ] Upgrade System screen?
+- [ ] Different Types of Enemies
+- [ ] Currency System
+- [ ] Wave System
+- [ ] Game Ending?
+- [ ] Art begins....
+- [ ] Audio production begins....
+Day 2: The game better be finished.
+- [ ] Resolution Independence?
+- [ ] Polish up art
+- [ ] Music / Sound Effects
+- [ ] Packaging / Distribution
+- [ ] Little polish things?
 
 IDEAS:
 
