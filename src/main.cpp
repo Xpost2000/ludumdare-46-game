@@ -410,6 +410,9 @@ namespace game{
 
     // mostly for button presses.
     struct input_state{
+        int mouse_x;
+        int mouse_y;
+
         bool escape_down;
         bool return_down;
 
@@ -541,6 +544,9 @@ namespace game{
             const int x,
             const int y,
             turret_unit to_place){
+        bool colliding_with_any = false;
+        bool violating_distance_rule = false;
+
         unsigned free_index = 0;
         {
             for(unsigned turret_entry = 0;
@@ -555,13 +561,75 @@ namespace game{
             }
         }
 
-        turret_unit* free_unit = 
-            &game_state.turret_units[free_index];
+        // check for collisions...
+        // this is probably slow? :/
+        float closest_turret_distance = INFINITY;
+        {
+            for(unsigned turret_entry = 0;
+                turret_entry < MAX_TURRETS_IN_GAME;
+                ++turret_entry){
+                if(turret_entry != free_index){
+                    turret_unit* current_turret = 
+                        &game_state.turret_units[turret_entry];
+                    if(current_turret->type != TURRET_NULL){
+                        aabb want_to_place_at_bounding_box =
+                        {
+                            x, 
+                            y,
+                            to_place.w,
+                            to_place.h
+                        };
 
-        (*free_unit) = to_place;
+                        aabb current_turrent_bounding_box =
+                        {
+                            current_turret->x,
+                            current_turret->y,
+                            current_turret->w,
+                            current_turret->h
+                        };
 
-        free_unit->x = x;
-        free_unit->y = y;
+                        if(aabb_intersects(want_to_place_at_bounding_box, current_turrent_bounding_box)){
+                            colliding_with_any = true;
+                        }
+
+                        float delta_x = current_turret->x - x;
+                        float delta_y = current_turret->y - y;
+
+                        float distance = 
+                            sqrtf((delta_x * delta_x) + (delta_y * delta_y));
+                        if(distance < closest_turret_distance){
+                            closest_turret_distance = distance;
+                        }
+                    }
+                }
+            }
+        }
+
+        // should probably be something else like
+        // based off the targetting range?
+        if(closest_turret_distance <= 200.0f){
+            violating_distance_rule = true;
+        }
+
+        if(!colliding_with_any && !violating_distance_rule){
+            turret_unit* free_unit = 
+                &game_state.turret_units[free_index];
+
+            (*free_unit) = to_place;
+
+            free_unit->x = x;
+            free_unit->y = y;
+        }else{
+            if(colliding_with_any){
+                push_floating_message(game_state, 
+                        x, y, 
+                        "You cannot place a unit atop another unit!", 1.5f);
+            }else if(violating_distance_rule){
+                push_floating_message(game_state, 
+                        x, y, 
+                        "This unit is too close to another unit!", 1.5f);
+            }
+        }
     }
 
     static turret_unit generate_turret_of_type(turret_type type){
@@ -855,6 +923,9 @@ namespace game{
             }
             break;
         }
+
+        game_state.input.mouse_x = mouse_x;
+        game_state.input.mouse_y = mouse_y;
     }
 
     static void handle_input(state& game_state, const float delta_time){
@@ -1302,6 +1373,28 @@ namespace game{
                             gfx::green);
                 }
             }
+        }
+
+        // draw preview turret
+        {
+            turret_unit ghost_placement = 
+                generate_turret_of_type((turret_type)(game_state.unit_selection.selected_unit+1));
+
+            gfx::color draw_color =
+            {
+                0, 0, 128, 128
+            };
+
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            gfx::render_rectangle(renderer, 
+                    {
+                    game_state.input.mouse_x - (ghost_placement.w / 2),
+                    game_state.input.mouse_y - (ghost_placement.h / 2),
+                    ghost_placement.w,
+                    ghost_placement.h
+                    },
+                    draw_color);
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
         }
 
         // draw projectiles

@@ -50,8 +50,9 @@ Day 1:
 - [X] Currency System
 - [X] floating message for "No you cannot purchase this!"
 - [X] Randomized Enemy Spawns
-- [ ] Unit previews when placing.
-- [ ] Prevent Units from being placed in each other.
+- [X] Unit previews when placing.
+- [X] Prevent Units from being placed in each other.
+- [X] Distance limitting.
 - [ ] Enemy Spawns based on wave so things don't go nuts early on.
 - [ ] Particle System
 - [ ] Enemies try dodging?
