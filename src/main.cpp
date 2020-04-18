@@ -311,12 +311,18 @@ namespace game{
     struct turret_projectile{
         projectile_type type;
 
+        float lifetime;
+
         float x;
         float y;
         float w;
         float h;
 
         float speed;
+
+        // vector.
+        float direction_x;
+        float direction_y;
 
         float damage;
         float defense_damage;
@@ -337,6 +343,9 @@ namespace game{
         float max_defense;
 
         float targetting_radius;
+
+        float fire_rate_delay;
+        float fire_rate_timer;
     };
 
     static constexpr size_t MAX_ENEMIES_IN_GAME = 512;
@@ -455,6 +464,7 @@ namespace game{
         // this can fail btw? 
         turret_unit to_place = {};
         to_place.type = TURRET_SINGLE_SHOOTER;
+        to_place.fire_rate_delay = 2.5f;
         to_place.w = 64;
         to_place.h = 64;
         to_place.health = 100;
@@ -746,6 +756,78 @@ namespace game{
         (*free_entry) = to_spawn;
     }
 
+    static void push_projectile(state& game_state, turret_projectile projectile){
+        unsigned free_index = 0;
+        {
+            for(unsigned projectile_index = 0;
+                projectile_index < MAX_PROJECTILES_IN_GAME;
+                ++projectile_index){
+                turret_projectile* entry =
+                    &game_state.projectiles[projectile_index];
+
+                bool can_replace = (entry->type == PROJECTILE_NULL) ||
+                                   (entry->lifetime <= 0.0f);
+
+                if(can_replace){
+                    free_index = projectile_index;
+                    break;
+                }
+            }
+        }
+
+        turret_projectile* free_entry =
+            &game_state.projectiles[free_index];
+
+        (*free_entry) = projectile;
+    }
+
+    static void turret_fire_projectile_at_point(state& game_state, 
+            turret_unit* turret,
+            float target_x,
+            float target_y){
+        if(turret->fire_rate_timer <= 0.0f){
+            turret->fire_rate_timer = turret->fire_rate_delay;
+            // fire a projectile
+            {
+                turret_projectile projectile = {};
+                projectile.type = PROJECTILE_BULLET;
+
+                float turret_center_x = turret->x + (turret->w / 2);
+                float turret_center_y = turret->y + (turret->h / 2);
+
+                projectile.x = turret_center_x;
+                projectile.y = turret_center_y;
+
+                projectile.w = 16;
+                projectile.h = 16;
+
+                // 2 mins and 30 seconds?
+                projectile.lifetime = 150;
+
+                projectile.speed = 200;
+
+                projectile.damage = 35;
+                projectile.defense_damage = 15;
+
+                // calculate direction it goes.
+                // maybe have a seeking one...
+                {
+                    float position_delta_x = target_x - turret_center_x;
+                    float position_delta_y = target_y - turret_center_y;
+
+                    float magnitude_of_vector = 
+                        sqrtf( (position_delta_x * position_delta_x) + 
+                               (position_delta_y * position_delta_y) );
+                    
+                    projectile.direction_x = position_delta_x / magnitude_of_vector;
+                    projectile.direction_y = position_delta_y / magnitude_of_vector;
+                }
+
+                push_projectile(game_state, projectile);
+            }
+        }
+    }
+
     static void initialize(state& game_state, SDL_Renderer* renderer){
         static int font_sizes_array[FONT_SIZE_TYPES] = 
         { 16, 32, 64 };
@@ -877,7 +959,7 @@ namespace game{
 
         // draw enemies
         {
-            for(unsigned enemy_index = 0; enemy_index < game_state.enemies_in_wave; ++enemy_index){
+            for(unsigned enemy_index = 0; enemy_index < MAX_ENEMIES_IN_GAME; ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
                 if(current_enemy->type != ENEMY_NULL){
                     gfx::render_rectangle(renderer, 
@@ -951,6 +1033,7 @@ namespace game{
                     //
                     // I have to actually hack in the calculations
                     // because nothing is centered.... Damn.
+#if 1
                     gfx::color circle_color = gfx::blue;
                     circle_color.a = 100;
                     gfx::render_circle(renderer,
@@ -958,6 +1041,8 @@ namespace game{
                             current_unit->y + (current_unit->h / 2),
                             current_unit->targetting_radius,
                             circle_color);
+#endif
+
                     gfx::render_rectangle(renderer, 
                             {
                             current_unit->x,
@@ -978,7 +1063,7 @@ namespace game{
                 turret_projectile* current_projectile =
                     &game_state.projectiles[projectile_entry];
 
-                if(current_projectile->type == PROJECTILE_NULL){
+                if(current_projectile->type != PROJECTILE_NULL){
                     gfx::render_rectangle(renderer, 
                             {
                             current_projectile->x,
@@ -1003,6 +1088,18 @@ namespace game{
                     1024,
                     text_y_layout,
                     on_wave_text, 
+                    gfx::white);
+        }
+        text_y_layout += advance_y;
+        {
+            char expect_enemies_text[255];
+            snprintf(expect_enemies_text, 255, "ENEMIES IN WAVE: %d", game_state.wave_spawn_list_entry_count);
+            gfx::render_centered_text(
+                    renderer, 
+                    FONT_SIZE_BIG,
+                    1024,
+                    text_y_layout,
+                    expect_enemies_text, 
                     gfx::white);
         }
         text_y_layout += advance_y;
@@ -1069,7 +1166,6 @@ namespace game{
         // handle wave spawning
         // and other wave logic.
         {
-            fprintf(stderr, "wave_spawn_timer: %3.3f\n", game_state.wave_spawn_timer);
             game_state.wave_spawn_timer -= delta_time;
             // spawn from the first thing in the list.
             if(game_state.wave_spawn_timer <= 0.0f){
@@ -1082,7 +1178,6 @@ namespace game{
                         &game_state.wave_spawn_list[wave_entry];
 
                     if(entry->type != ENEMY_NULL){
-                        fprintf(stderr, "spawn\n");
                         // actually spawn...
                         {
                             enemy_entity to_spawn =
@@ -1101,6 +1196,100 @@ namespace game{
                 }
             }
         }
+
+        // update turrets.
+        {
+            for(unsigned turret_index = 0;
+                turret_index < MAX_TURRETS_IN_GAME;
+                ++turret_index){
+                turret_unit* current_turret = 
+                    &game_state.turret_units[turret_index];
+
+                if(current_turret->type != TURRET_NULL){
+                    current_turret->fire_rate_timer -= delta_time;
+
+                    for(unsigned enemy_index = 0;
+                        enemy_index < MAX_ENEMIES_IN_GAME;
+                        ++enemy_index){
+                        enemy_entity* current_enemy =
+                            &game_state.enemies[enemy_index];
+
+                        if(current_enemy->type != ENEMY_NULL &&
+                           current_enemy->health > 0){
+
+                            float delta_x = current_enemy->x - current_turret->x;
+                            float delta_y = current_enemy->y - current_turret->y;
+                            float distance_between_turret_and_enemy =
+                                sqrtf((delta_y * delta_y) + (delta_x * delta_x));
+
+                            if(distance_between_turret_and_enemy <= current_turret->targetting_radius){
+                                // it will attempt to fire...
+                                // if it can...
+                                turret_fire_projectile_at_point(game_state, current_turret, 
+                                        current_enemy->x + (current_enemy->w / 2), 
+                                        current_enemy->y + (current_enemy->h / 2));
+                            }
+                        }
+                    } 
+                }
+            }
+        }
+
+        // update projectiles
+        {
+            for(unsigned projectile_index = 0;
+                projectile_index < MAX_PROJECTILES_IN_GAME;
+                ++projectile_index){
+                turret_projectile* projectile = 
+                    &game_state.projectiles[projectile_index];
+
+                if(projectile->type != PROJECTILE_NULL){
+                    projectile->x += (projectile->direction_x * projectile->speed) * delta_time;
+                    projectile->y += (projectile->direction_y * projectile->speed) * delta_time;
+
+                    projectile->lifetime -= delta_time;
+
+                    aabb projectile_bounding_box =
+                    {
+                        projectile->x,
+                        projectile->y,
+                        projectile->w,
+                        projectile->h
+                    };
+
+                    for(unsigned enemy_index = 0;
+                        enemy_index < MAX_ENEMIES_IN_GAME;
+                        ++enemy_index){
+                        enemy_entity* current_enemy =
+                            &game_state.enemies[enemy_index];
+
+                        if(current_enemy->type != ENEMY_NULL &&
+                           current_enemy->health > 0){
+
+                            aabb enemy_bounding_box =
+                            {
+                                current_enemy->x,
+                                current_enemy->y,
+                                current_enemy->w,
+                                current_enemy->h
+                            };
+
+                            if(aabb_intersects(projectile_bounding_box, enemy_bounding_box)){
+                                // for now straight up kill the enemy;
+                                // @TODO jerry : ^_^
+                                projectile->type = PROJECTILE_NULL;
+                                projectile->lifetime = 0;
+
+                                current_enemy->health = -1000;
+
+                                break;
+                            }
+                        }
+                    } 
+                }
+            }
+        }
+
         // update enemies.
         {
             aabb tree_bounding_box = 
@@ -1108,10 +1297,16 @@ namespace game{
                 game_state.tree.x, game_state.tree.y,
                 game_state.tree.w, game_state.tree.h
             };
-            for(unsigned enemy_index = 0; enemy_index < MAX_ENEMIES_IN_GAME; ++enemy_index){
+            for(unsigned enemy_index = 0;
+                enemy_index < MAX_ENEMIES_IN_GAME;
+                ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
                 // dead or doesn't exist, skip.
-                if(current_enemy->type == ENEMY_NULL || current_enemy->health == 0){ 
+                if(current_enemy->type == ENEMY_NULL || current_enemy->health <= 0){ 
+                    if(current_enemy->type != ENEMY_NULL){
+                        current_enemy->type = ENEMY_NULL;
+                        game_state.enemies_in_wave--;
+                    }
                     continue;
                 }
                 tree_entity* target = &game_state.tree;

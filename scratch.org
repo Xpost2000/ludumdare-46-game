@@ -37,21 +37,25 @@ Day 1:
 - [ ] Wave System
 - [ ] Randomized Enemy Spawns
 - [ ] Unit Selection From List
-- [ ] Placing my first units.
+- [X] Placing my first units.
 - [ ] floating message for "No you cannot purchase this!"
-- [ ] Killable Enemies
+- [X] Killable Enemies
+- [X] Turrets target enemies
 - [ ] Having bosses?
 - [ ] Particle System
+- [ ] Enemies try dodging?
 - [ ] Sprites & Animation
 - [ ] Preview Screen for Wave
 - [ ] Prep time....
 - [ ] Upgrade System screen?
 - [X] Different Types of Enemies [Not unique enough but can be marked as done.]
-- [ ] Currency System
+- [X] Currency System
 - [ ] Game Ending?
 - [ ] Art begins....
 - [ ] Audio production begins....
 Day 2: The game better be finished.
+- [ ] Use real collision detection code.
+- [ ] Clean up code
 - [X] Resolution Independence? THX SDL2 I LOVE YOU SO MUCH FOR DOING THIS SO EASILY
 - [ ] Polish up art
 - [ ] Music / Sound Effects
