@@ -34,25 +34,34 @@ Basic mechanics... Basic screens
 Day 1:
 - [X] Spawn Enemies with circle
 - [X] Actually having a spawner.
-- [ ] Wave System
-- [ ] Randomized Enemy Spawns
-- [ ] Unit Selection From List
+- [X] Wave System 
+- [X] Unit Selection From List
+  - [X] Visually exists
+  - [X] Actually works?
 - [X] Placing my first units.
-- [ ] floating message for "No you cannot purchase this!"
 - [X] Killable Enemies
 - [X] Turrets target enemies
-- [ ] Having bosses?
+- [X] Having bosses? [By proxy of different enemy types yes.]
+- [X] Preview Screen for Wave
+  - [X] Have it toggleable
+  - [X] Shows up
+- [X] Prep time....
+- [X] Different Types of Enemies [Not unique enough but can be marked as done.]
+- [X] Currency System
+- [X] floating message for "No you cannot purchase this!"
+- [X] Randomized Enemy Spawns
+- [ ] Unit previews when placing.
+- [ ] Prevent Units from being placed in each other.
+- [ ] Enemy Spawns based on wave so things don't go nuts early on.
 - [ ] Particle System
 - [ ] Enemies try dodging?
 - [ ] Sprites & Animation
-- [ ] Preview Screen for Wave
-- [ ] Prep time....
-- [ ] Upgrade System screen?
-- [X] Different Types of Enemies [Not unique enough but can be marked as done.]
-- [X] Currency System
-- [ ] Game Ending?
+- [ ] Game Ending?[OPTIONAL???]
 - [ ] Art begins....
 - [ ] Audio production begins....
+- [ ] Game Balance....
+- [ ] Pause Menu...
+- [ ] Upgrade System screen?
 Day 2: The game better be finished.
 - [ ] Use real collision detection code.
 - [ ] Clean up code

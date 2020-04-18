@@ -22,9 +22,12 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h> // I don't appreciate using rand or srand but speed speed speed.
 #include <stdio.h> // emergency?
 
 #include <math.h>
+
+#define STUPID_DEBUG
 
 static constexpr unsigned int virtual_window_width = 1024;
 static constexpr unsigned int virtual_window_height = 768;
@@ -255,6 +258,17 @@ namespace gfx{
 };
 
 namespace game{
+    // cosmetic stuff...
+    // and also for taunts!!!
+    struct floating_message{
+        float x;
+        float y;
+        char* text;
+
+        float max_lifetime;
+        float lifetime;
+    };
+
     enum game_screen_state{
         GAME_SCREEN_STATE_MAIN_MENU,
         GAME_SCREEN_STATE_ATTRACT_MODE,
@@ -385,20 +399,30 @@ namespace game{
 
         float fire_rate_delay;
         float fire_rate_timer;
+
+        int cost;
     };
 
     static constexpr size_t MAX_ENEMIES_IN_GAME = 512;
     static constexpr size_t MAX_TURRETS_IN_GAME = 512;
     static constexpr size_t MAX_PROJECTILES_IN_GAME = 512;
+    static constexpr size_t MAX_FLOATING_MESSAGES_IN_GAME = 512;
 
     // mostly for button presses.
     struct input_state{
         bool escape_down;
-        bool w_down;
         bool return_down;
 
         bool left_down;
         bool right_down;
+
+        bool tab_down;
+#ifdef STUPID_DEBUG
+        // skip round instantly.
+        bool q_down;
+        // damage tree.
+        bool w_down;
+#endif
     };
 
     struct wave_spawn_list_entry{
@@ -415,10 +439,13 @@ namespace game{
     struct state{
         unit_selection_ui unit_selection;
 
+        bool show_wave_preview;
+
         input_state last_input;
         input_state input; 
         game_screen_state screen;
 
+        floating_message floating_messages[MAX_FLOATING_MESSAGES_IN_GAME];
 #if 0
         float time_passed;
 #endif
@@ -444,6 +471,37 @@ namespace game{
 
         tree_entity tree;
     };
+
+    static void push_floating_message(state& game_state,
+            float x,
+            float y,
+            char* message,
+            float lifetime){
+        // here I go again
+        unsigned free_index = 0;
+        {
+            for(unsigned floating_message_entry_index = 0;
+                floating_message_entry_index < MAX_FLOATING_MESSAGES_IN_GAME;
+                ++floating_message_entry_index){
+                floating_message* entry = 
+                    &game_state.floating_messages[floating_message_entry_index];
+
+                if(entry->lifetime <= 0.0f){
+                    free_index = floating_message_entry_index;
+                    break;
+                }
+            }
+        }
+
+        floating_message* free_entry = 
+            &game_state.floating_messages[free_index];
+
+        free_entry->x = x;
+        free_entry->y = y;
+        free_entry->text = message;
+        free_entry->lifetime = lifetime;
+        free_entry->max_lifetime = lifetime;
+    }
 
     static void clear_wave_spawn_list(state& game_state){
         for(int wave_entry = 0; 
@@ -506,28 +564,75 @@ namespace game{
         free_unit->y = y;
     }
 
+    static turret_unit generate_turret_of_type(turret_type type){
+        turret_unit result = {};
+
+        result.type = type;
+
+        result.w = 32;
+        result.h = 32;
+
+        switch(type){
+            case TURRET_SINGLE_SHOOTER:
+            {
+                result.health = 85;
+                result.max_health = 85;
+
+                result.defense = 20;
+                result.max_defense = 20;
+
+                result.cost = 500;
+                result.targetting_radius = 350;
+                result.fire_rate_delay = 1.75f;
+            }
+            break;
+            case TURRET_REPEATER:
+            {
+                result.health = 120;
+                result.max_health = 120;
+
+                result.defense = 40;
+                result.max_defense = 40;
+
+                result.cost = 1000;
+
+                result.targetting_radius = 250;
+                result.fire_rate_delay = 0.75f;
+            }
+            break;
+            case TURRET_FREEZER:
+            {
+                result.health = 120;
+                result.max_health = 120;
+
+                result.defense = 40;
+                result.max_defense = 40;
+
+                result.cost = 1500;
+                result.targetting_radius = 250;
+                result.fire_rate_delay = 2.00f;
+            }
+            break;
+        }
+
+        return result;
+    }
+
     static void place_selected_unit(state& game_state,
             const int mouse_x,
             const int mouse_y){
         // for now just plant a dumb single shooter.
         // this can fail btw? 
-        turret_unit to_place = {};
-        to_place.type = TURRET_SINGLE_SHOOTER;
-        to_place.fire_rate_delay = 2.5f;
-        to_place.w = 64;
-        to_place.h = 64;
-        to_place.health = 100;
-        to_place.max_health = 100;
+        turret_unit to_place = 
+            generate_turret_of_type((turret_type)(game_state.unit_selection.selected_unit+1));
 
-        to_place.targetting_radius = 150;
-
-        to_place.defense = 100;
-        to_place.max_defense = 100;
-        if(game_state.points - 300 >= 0){
+        if(game_state.points - to_place.cost >= 0){
             push_turret_unit(game_state, mouse_x - (to_place.w / 2), mouse_y - (to_place.h / 2), to_place);
-            game_state.points -= 300;
+            game_state.points -= to_place.cost;
         }else{
-
+            push_floating_message(game_state, 
+                    mouse_x, mouse_y, 
+                    "You cannot afford this unit!", 1.5f);
         }
     }
 
@@ -535,6 +640,7 @@ namespace game{
         enemy_entity result = {};
 
         result.type = type;
+        
         result.x = x;
         result.y = y;
 
@@ -620,22 +726,52 @@ namespace game{
     //
     // I could implement a weighted random list really quickly I guess...
     static void generate_wave(state& game_state){
+        // 15 unique waves...
+        static constexpr size_t unique_wave_count = 15;
+        static int wave_enemy_counts[unique_wave_count] = {
+            10, 10, 10, 12, 15, 15, 15, 20, 20, 20, 20, 25, 25, 30, 35
+        };
+        int clamped_index = clamp<int>(game_state.game_wave, 0, unique_wave_count-1);
         // Each entry should probably set their own spawn timer
         // so the game looks like it's taking "random" time for
         // generation
         game_state.wave_spawn_delay = 2.45f;
         game_state.wave_spawn_timer = game_state.wave_spawn_delay;
 
-        for(int i = 0; i < 10; ++i){
-            const float angle = i * 36;
+        game_state.game_wave++;
+
+        for(int i = 0; 
+            i < wave_enemy_counts[clamped_index]; 
+            ++i){
+            const float angle = static_cast<int>(rand() % 360+1);
             const float radians = angle * (M_PI / 180.0f);
             const float radius = 450;
 
             push_wave_entry(game_state, 
-                    ENEMY_BASIC_LUMBERJACK,
+                    // skip ENEMY_NULL
+                    static_cast<enemy_type>(rand() % ENEMY_TYPE_COUNT + 1),
                     (cosf(radians)+1) * radius,
                     (sinf(radians)+1) * radius);
         }
+    }
+
+    static void finished_round(state& game_state){
+        // clear arrays...
+        for(unsigned enemy_entry = 0;
+                enemy_entry < MAX_ENEMIES_IN_GAME;
+                ++enemy_entry){
+            game_state.wave_spawn_list[enemy_entry] = wave_spawn_list_entry {};
+            game_state.enemies[enemy_entry] = enemy_entity{};
+        }
+
+        game_state.wave_spawn_timer = 0;
+        game_state.wave_spawn_list_entry_count = 0;
+        game_state.enemies_in_wave = 0;
+        game_state.time_until_wave_ends = 0;
+        game_state.preparation_timer = 0;
+
+        game_state.wave_started = false;
+        generate_wave(game_state);
     }
 
     static void setup_game(state& game_state){
@@ -677,14 +813,11 @@ namespace game{
                 game_state.enemies[enemy_entry] = enemy_entity{};
             }
 
-            game_state.wave_spawn_timer = 0;
-            game_state.wave_spawn_list_entry_count = 0;
-            game_state.enemies_in_wave = 0;
-            game_state.time_until_wave_ends = 0;
-            game_state.preparation_timer = 0;
-
             game_state.game_wave = 0;
-            game_state.wave_started = false;
+        }
+        // gen test list
+        {
+            finished_round(game_state);
         }
     }
 
@@ -725,10 +858,18 @@ namespace game{
     }
 
     static void handle_input(state& game_state, const float delta_time){
+#ifdef STUPID_DEBUG
         if(!game_state.input.w_down &&
            game_state.last_input.w_down){
             game_state.tree.health -= 10;
         }
+
+        if(!game_state.input.q_down &&
+            game_state.last_input.q_down){
+            game_state.enemies_in_wave = 0;
+            game_state.wave_spawn_list_entry_count = 0;
+        }
+#endif
 
         if(!game_state.input.escape_down &&
            game_state.last_input.escape_down){
@@ -750,7 +891,6 @@ namespace game{
             }else if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 if(!game_state.wave_started){
                     game_state.wave_started = true;
-                    generate_wave(game_state);
                 }
             }
         }
@@ -772,6 +912,15 @@ namespace game{
                 }
             }
         }
+
+        if(!game_state.input.tab_down &&
+            game_state.last_input.tab_down){
+            if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                if(!game_state.wave_started){
+                    game_state.show_wave_preview ^= 1;
+                }
+            }
+        }
     }
 
     static void handle_key_input(state& game_state, SDL_Event* event){
@@ -779,11 +928,18 @@ namespace game{
         bool keydown = event->type == SDL_KEYDOWN;
 
         switch(scancode){
+#ifdef STUPID_DEBUG
+            case SDL_SCANCODE_Q:
+            {
+                game_state.input.q_down = keydown;
+            }
+            break;
             case SDL_SCANCODE_W:
             {
                 game_state.input.w_down = keydown;
             }
             break;
+#endif
             case SDL_SCANCODE_RETURN:
             {
                 game_state.input.return_down = keydown;
@@ -802,6 +958,11 @@ namespace game{
             case SDL_SCANCODE_RIGHT:
             {
                 game_state.input.right_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_TAB:
+            {
+                game_state.input.tab_down = keydown;
             }
             break;
         }
@@ -1222,7 +1383,7 @@ namespace game{
                 clamp<int>(game_state.unit_selection.selected_unit, 0, TURRET_TYPE_COUNT-2);
             if(!game_state.wave_started){
                 const float ui_selection_box_size = 128;
-                const float ui_selection_layout_y = 768 - (ui_selection_box_size * 1.05);
+                const float ui_selection_layout_y = virtual_window_height - (ui_selection_box_size * 1.05);
                 float ui_selection_layout_x = virtual_window_width * 0.1;
 
                 for(unsigned unit_index = TURRET_SINGLE_SHOOTER;
@@ -1248,7 +1409,84 @@ namespace game{
                             draw_color
                             );
                 }
+
+                // print the preview cards for all enemies that
+                // will show up
+                if(game_state.show_wave_preview){
+                    const float ui_preview_card_box_size = 128;
+                    const float ui_preview_card_wrap_width = ui_preview_card_box_size * 7;
+
+                    float ui_preview_card_layout_y = (ui_preview_card_box_size * 2);
+                    float ui_preview_card_layout_x = virtual_window_width * 0.1;
+
+                    for(unsigned wave_list_entry_index = 0;
+                            wave_list_entry_index < game_state.wave_spawn_list_entry_count;
+                            ++wave_list_entry_index){
+                        wave_spawn_list_entry* entry = 
+                            &game_state.wave_spawn_list[wave_list_entry_index];
+
+                        gfx::color draw_color = gfx::white;
+
+                        switch(entry->type){
+                            case ENEMY_BASIC_LUMBERJACK: { } break;
+                            case ENEMY_SKINNY_LUMBERJACK: { } break;
+                            case ENEMY_FAT_LUMBERJACK: { draw_color = gfx::red; } break;
+                            case ENEMY_ANARCHIST: { draw_color = gfx::color{0, 255, 255}; } break;
+                            case ENEMY_LOGGING_MACHINES: { draw_color = gfx::red; } break;
+                            case ENEMY_ANTHROPORMORPHIC_ANT: { draw_color = gfx::color{0, 255, 255}; } break;
+                        }
+
+                        gfx::rectangle draw_rect =
+                        {
+                            ui_preview_card_layout_x,
+                            ui_preview_card_layout_y,
+                            ui_preview_card_box_size,
+                            ui_preview_card_box_size
+                        };
+
+                        ui_preview_card_layout_x += (ui_preview_card_box_size * 1.10);
+                        if(ui_preview_card_layout_x >= ui_preview_card_wrap_width){
+                            ui_preview_card_layout_x = virtual_window_width * 0.1;
+                            ui_preview_card_layout_y += ui_preview_card_box_size * 1.05;
+                        }
+                        gfx::render_rectangle( 
+                                renderer,
+                                draw_rect,
+                                draw_color
+                                );
+                    }
+                }else{
+                    gfx::render_centered_text(renderer,
+                            FONT_SIZE_MEDIUM,
+                            virtual_window_width,
+                            virtual_window_height,
+                            "Press TAB to see the wave preview",
+                            gfx::blue);
+                }
            }
+        }
+
+        // floating text
+        {
+            for(unsigned floating_message_index = 0;
+                floating_message_index < MAX_FLOATING_MESSAGES_IN_GAME;
+                ++floating_message_index){
+                floating_message* message = 
+                    &game_state.floating_messages[floating_message_index];
+                if(message->lifetime > 0.0f){
+                    gfx::color draw_color = gfx::white;
+                    draw_color.a = 
+                        (float)(255 * (float)(message->lifetime /
+                                    message->max_lifetime));
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            message->x, 
+                            message->y,
+                            message->text,
+                            draw_color);
+                }
+            }
         }
     }
 
@@ -1287,180 +1525,196 @@ namespace game{
     }
 
     static void update_gameplay(state& game_state, const float delta_time){
-        // handle wave spawning
-        // and other wave logic.
-        {
-            game_state.wave_spawn_timer -= delta_time;
-            // spawn from the first thing in the list.
-            if(game_state.wave_spawn_timer <= 0.0f){
-                game_state.wave_spawn_timer = game_state.wave_spawn_delay;
-                bool wave_empty = true;
-                for(unsigned wave_entry = 0;
-                        wave_entry < MAX_ENEMIES_IN_GAME;
-                        ++wave_entry){
-                    wave_spawn_list_entry* entry =
-                        &game_state.wave_spawn_list[wave_entry];
+        if(game_state.wave_started){
+            if(game_state.wave_spawn_list_entry_count == 0 &&
+               game_state.enemies_in_wave == 0){
+                finished_round(game_state);
+            }
+            // handle wave spawning
+            // and other wave logic.
+            {
+                game_state.wave_spawn_timer -= delta_time;
+                // spawn from the first thing in the list.
+                if(game_state.wave_spawn_timer <= 0.0f){
+                    game_state.wave_spawn_timer = game_state.wave_spawn_delay;
+                    bool wave_empty = true;
+                    for(unsigned wave_entry = 0;
+                            wave_entry < MAX_ENEMIES_IN_GAME;
+                            ++wave_entry){
+                        wave_spawn_list_entry* entry =
+                            &game_state.wave_spawn_list[wave_entry];
 
-                    if(entry->type != ENEMY_NULL){
-                        // actually spawn...
-                        {
-                            enemy_entity to_spawn =
-                                generate_enemy_of_type(entry->type, 
-                                        entry->x,
-                                        entry->y);
+                        if(entry->type != ENEMY_NULL){
+                            // actually spawn...
+                            {
+                                enemy_entity to_spawn =
+                                    generate_enemy_of_type(entry->type, 
+                                            entry->x,
+                                            entry->y);
 
-                            push_enemy(game_state, to_spawn);
+                                push_enemy(game_state, to_spawn);
 
-                            entry->type = ENEMY_NULL;
-                            game_state.wave_spawn_list_entry_count--;
+                                entry->type = ENEMY_NULL;
+                                game_state.wave_spawn_list_entry_count--;
+                            }
+                            wave_empty = false;
+                            break;
                         }
-                        wave_empty = false;
-                        break;
                     }
                 }
             }
-        }
 
-        // update turrets.
-        {
-            for(unsigned turret_index = 0;
-                turret_index < MAX_TURRETS_IN_GAME;
-                ++turret_index){
-                turret_unit* current_turret = 
-                    &game_state.turret_units[turret_index];
+            // update turrets.
+            {
+                for(unsigned turret_index = 0;
+                        turret_index < MAX_TURRETS_IN_GAME;
+                        ++turret_index){
+                    turret_unit* current_turret = 
+                        &game_state.turret_units[turret_index];
 
-                if(current_turret->type != TURRET_NULL){
-                    current_turret->fire_rate_timer -= delta_time;
+                    if(current_turret->type != TURRET_NULL){
+                        current_turret->fire_rate_timer -= delta_time;
 
-                    for(unsigned enemy_index = 0;
-                        enemy_index < MAX_ENEMIES_IN_GAME;
-                        ++enemy_index){
-                        enemy_entity* current_enemy =
-                            &game_state.enemies[enemy_index];
+                        for(unsigned enemy_index = 0;
+                                enemy_index < MAX_ENEMIES_IN_GAME;
+                                ++enemy_index){
+                            enemy_entity* current_enemy =
+                                &game_state.enemies[enemy_index];
 
-                        if(current_enemy->type != ENEMY_NULL &&
-                           current_enemy->health > 0){
+                            if(current_enemy->type != ENEMY_NULL &&
+                                    current_enemy->health > 0){
 
-                            float delta_x = current_enemy->x - current_turret->x;
-                            float delta_y = current_enemy->y - current_turret->y;
-                            float distance_between_turret_and_enemy =
-                                sqrtf((delta_y * delta_y) + (delta_x * delta_x));
+                                float delta_x = current_enemy->x - current_turret->x;
+                                float delta_y = current_enemy->y - current_turret->y;
+                                float distance_between_turret_and_enemy =
+                                    sqrtf((delta_y * delta_y) + (delta_x * delta_x));
 
-                            if(distance_between_turret_and_enemy <= current_turret->targetting_radius){
-                                // it will attempt to fire...
-                                // if it can...
-                                turret_fire_projectile_at_point(game_state, current_turret, 
-                                        current_enemy->x + (current_enemy->w / 2), 
-                                        current_enemy->y + (current_enemy->h / 2));
+                                if(distance_between_turret_and_enemy <= current_turret->targetting_radius){
+                                    // it will attempt to fire...
+                                    // if it can...
+                                    turret_fire_projectile_at_point(game_state, current_turret, 
+                                            current_enemy->x + (current_enemy->w / 2), 
+                                            current_enemy->y + (current_enemy->h / 2));
+                                }
                             }
-                        }
-                    } 
+                        } 
+                    }
                 }
             }
-        }
 
-        // update projectiles
-        {
-            for(unsigned projectile_index = 0;
-                projectile_index < MAX_PROJECTILES_IN_GAME;
-                ++projectile_index){
-                turret_projectile* projectile = 
-                    &game_state.projectiles[projectile_index];
+            // update projectiles
+            {
+                for(unsigned projectile_index = 0;
+                        projectile_index < MAX_PROJECTILES_IN_GAME;
+                        ++projectile_index){
+                    turret_projectile* projectile = 
+                        &game_state.projectiles[projectile_index];
 
-                if(projectile->type != PROJECTILE_NULL){
-                    projectile->x += (projectile->direction_x * projectile->speed) * delta_time;
-                    projectile->y += (projectile->direction_y * projectile->speed) * delta_time;
+                    if(projectile->type != PROJECTILE_NULL){
+                        projectile->x += (projectile->direction_x * projectile->speed) * delta_time;
+                        projectile->y += (projectile->direction_y * projectile->speed) * delta_time;
 
-                    projectile->lifetime -= delta_time;
+                        projectile->lifetime -= delta_time;
 
-                    aabb projectile_bounding_box =
+                        aabb projectile_bounding_box =
+                        {
+                            projectile->x,
+                            projectile->y,
+                            projectile->w,
+                            projectile->h
+                        };
+
+                        for(unsigned enemy_index = 0;
+                                enemy_index < MAX_ENEMIES_IN_GAME;
+                                ++enemy_index){
+                            enemy_entity* current_enemy =
+                                &game_state.enemies[enemy_index];
+
+                            if(current_enemy->type != ENEMY_NULL &&
+                                    current_enemy->health > 0){
+
+                                aabb enemy_bounding_box =
+                                {
+                                    current_enemy->x,
+                                    current_enemy->y,
+                                    current_enemy->w,
+                                    current_enemy->h
+                                };
+
+                                if(aabb_intersects(projectile_bounding_box, enemy_bounding_box)){
+                                    // for now straight up kill the enemy;
+                                    // @TODO jerry : ^_^
+                                    projectile->type = PROJECTILE_NULL;
+                                    projectile->lifetime = 0;
+
+                                    current_enemy->health = -1000;
+
+                                    break;
+                                }
+                            }
+                        } 
+                    }
+                }
+            }
+
+            // update enemies.
+            {
+                aabb tree_bounding_box = 
+                {
+                    game_state.tree.x, game_state.tree.y,
+                    game_state.tree.w, game_state.tree.h
+                };
+                for(unsigned enemy_index = 0;
+                        enemy_index < MAX_ENEMIES_IN_GAME;
+                        ++enemy_index){
+                    enemy_entity* current_enemy = &game_state.enemies[enemy_index];
+                    // dead or doesn't exist, skip.
+                    if(current_enemy->type == ENEMY_NULL || current_enemy->health <= 0){ 
+                        if(current_enemy->type != ENEMY_NULL){
+                            current_enemy->type = ENEMY_NULL;
+                            game_state.enemies_in_wave--;
+                        }
+                        continue;
+                    }
+                    tree_entity* target = &game_state.tree;
+
+                    float direction_to_target_x = 0;
+                    float direction_to_target_y = 0;
+
                     {
-                        projectile->x,
-                        projectile->y,
-                        projectile->w,
-                        projectile->h
+                        float delta_x = (target->x + (target->w/2)) - current_enemy->x;
+                        float delta_y = (target->y + (target->h/2)) - current_enemy->y;
+
+                        float magnitude_of_vector = 
+                            sqrtf( (delta_x * delta_x) + (delta_y * delta_y) );
+
+                        direction_to_target_x = delta_x / magnitude_of_vector;
+                        direction_to_target_y = delta_y / magnitude_of_vector;
+                    }
+                    aabb enemy_bounding_box = 
+                    {
+                        current_enemy->x, current_enemy->y,
+                        current_enemy->w, current_enemy->h,
                     };
 
-                    for(unsigned enemy_index = 0;
-                        enemy_index < MAX_ENEMIES_IN_GAME;
-                        ++enemy_index){
-                        enemy_entity* current_enemy =
-                            &game_state.enemies[enemy_index];
+                    bool touching_tree = aabb_intersects(enemy_bounding_box, tree_bounding_box);
 
-                        if(current_enemy->type != ENEMY_NULL &&
-                           current_enemy->health > 0){
-
-                            aabb enemy_bounding_box =
-                            {
-                                current_enemy->x,
-                                current_enemy->y,
-                                current_enemy->w,
-                                current_enemy->h
-                            };
-
-                            if(aabb_intersects(projectile_bounding_box, enemy_bounding_box)){
-                                // for now straight up kill the enemy;
-                                // @TODO jerry : ^_^
-                                projectile->type = PROJECTILE_NULL;
-                                projectile->lifetime = 0;
-
-                                current_enemy->health = -1000;
-
-                                break;
-                            }
-                        }
-                    } 
+                    if(!touching_tree){
+                        current_enemy->x += direction_to_target_x * current_enemy->speed * delta_time;
+                        current_enemy->y += direction_to_target_y * current_enemy->speed * delta_time;
+                    }
                 }
             }
+        }else{
         }
 
-        // update enemies.
-        {
-            aabb tree_bounding_box = 
-            {
-                game_state.tree.x, game_state.tree.y,
-                game_state.tree.w, game_state.tree.h
-            };
-            for(unsigned enemy_index = 0;
-                enemy_index < MAX_ENEMIES_IN_GAME;
-                ++enemy_index){
-                enemy_entity* current_enemy = &game_state.enemies[enemy_index];
-                // dead or doesn't exist, skip.
-                if(current_enemy->type == ENEMY_NULL || current_enemy->health <= 0){ 
-                    if(current_enemy->type != ENEMY_NULL){
-                        current_enemy->type = ENEMY_NULL;
-                        game_state.enemies_in_wave--;
-                    }
-                    continue;
-                }
-                tree_entity* target = &game_state.tree;
-
-                float direction_to_target_x = 0;
-                float direction_to_target_y = 0;
-
-                {
-                    float delta_x = (target->x + (target->w/2)) - current_enemy->x;
-                    float delta_y = (target->y + (target->h/2)) - current_enemy->y;
-
-                    float magnitude_of_vector = 
-                        sqrtf( (delta_x * delta_x) + (delta_y * delta_y) );
-                    
-                    direction_to_target_x = delta_x / magnitude_of_vector;
-                    direction_to_target_y = delta_y / magnitude_of_vector;
-                }
-                aabb enemy_bounding_box = 
-                {
-                    current_enemy->x, current_enemy->y,
-                    current_enemy->w, current_enemy->h,
-                };
-
-                bool touching_tree = aabb_intersects(enemy_bounding_box, tree_bounding_box);
-
-                if(!touching_tree){
-                    current_enemy->x += direction_to_target_x * current_enemy->speed * delta_time;
-                    current_enemy->y += direction_to_target_y * current_enemy->speed * delta_time;
-                }
-            }
+        for(unsigned floating_message_index = 0;
+            floating_message_index < MAX_FLOATING_MESSAGES_IN_GAME;
+            ++floating_message_index){
+            floating_message* message = 
+                &game_state.floating_messages[floating_message_index];
+            message->lifetime -= delta_time;
+            message->y -= 25 * delta_time;
         }
 
         // check if game lost
@@ -1508,6 +1762,8 @@ int main(int argc, char** argv){
     Mix_Init(MIX_INIT_OGG);
     Mix_OpenAudio(MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 2048);
     TTF_Init();
+
+    srand(time(nullptr));
 
     SDL_Window* window =
         SDL_CreateWindow("LD46: Keep it Alive!", 
