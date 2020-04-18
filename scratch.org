@@ -1,0 +1,12 @@
+Ludum Dare 46 :Scratch Board:
+
+THOUGHTS:
+This is the file that contains all of my scratch board ideas in text.
+Org mode EMACS 26, and maybe summaries.
+
+Day 0:
+Day 1:
+Day 2:
+
+IDEAS:
+
