@@ -1,5 +1,7 @@
 Ludum Dare 46 :Scratch Board:
 
+KEEP IT ALIVE
+
 THOUGHTS:
 This is the file that contains all of my scratch board ideas in text.
 Org mode EMACS 26, and maybe summaries.
@@ -10,3 +12,50 @@ Day 2:
 
 IDEAS:
 
+- literal "It"
+
+- Plants
+  - Plants vs Zombies
+  - Some Tower Defense Game about defending the last plant on Earth.
+    
+    So... You have a plant in the center of the screen,
+    and you have these points that you can use to buy tower upgrades and
+    buildings. Like guards or sentries that you can use to protect the plant.
+    
+    Plot:
+
+    The year is 3450
+    
+    and pollution and global warning have taken a large toil on the world.
+    Unfortunately greedy humans decided to chop down every tree on Earth
+    for wood and stuff.
+    
+    As a group of environmentalists, you will protect the last known tree
+    on the planet from all these lumberjacks.
+    
+    Enemies:
+
+    Basic Lumberjack - Kind of slow, moderately tough
+    Skinny Lumberjack - Really fast, really weak
+    Fat Lumberjack - Really slow, really really tough (boss)
+    Anarchist - Kind of fast, but just temporarily disarms "tower" / "weapon"
+    Logging Machines - Really slow, extra tough, maybe has multiple layers of armor?
+    
+    Buildings:
+    
+    Rock launcher / Cannon : Really cheap, does okay damage. Slow fire rate. Little bit of knockback.
+    Boulder Cannon : Better version of rock launcher. Very slow.
+    
+    Freeze pack : Low damage, moderately expensive, slows down enemy.
+    
+    Repeater : Low damage, high rate of fire, moderately expensive.
+    
+    Trip Mine : Walk over, kaboom! Moderately expensive?
+    
+    
+    Should I implement player based running placement.
+    Or invisible god placement like normal tower defense games?
+
+- Pet
+
+- Medical Patient? [TOO SOON MAN?]
