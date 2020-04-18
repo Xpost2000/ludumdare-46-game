@@ -1,4 +1,6 @@
 /*
+ * I know it's 2020. I'm sorry it runs in 1024 x 768.
+ *
  * I'm very much aware all the types here are nearly the same
  * thing...
  *
@@ -32,6 +34,22 @@ static constexpr unsigned int window_height = 900;
 
 static bool game_running = true;
 
+template<typename numeric_type>
+static const numeric_type clamp(
+        numeric_type in_value, // used as intermediate storing value as well.
+        const numeric_type min_value,
+        const numeric_type max_value){
+    if(in_value < min_value){
+        in_value = min_value;
+    }else{
+        if(in_value > max_value){
+            in_value = max_value;
+        }
+    }
+
+    return in_value;
+}
+
 enum font_sizes{
     FONT_SIZE_SMALL,
     FONT_SIZE_MEDIUM,
@@ -43,6 +61,7 @@ enum font_sizes{
 namespace gfx{
     TTF_Font* fonts[FONT_SIZE_TYPES];
     SDL_Texture* circle_texture;
+    SDL_Texture* backdrop_texture;
 
     SDL_Texture* load_image_to_texture(SDL_Renderer* renderer, const char* path){
         SDL_Surface* surface = IMG_Load(path);
@@ -88,6 +107,24 @@ namespace gfx{
         SDL_SetTextureColorMod(circle_texture, c.r, c.g, c.b);
         SDL_SetTextureAlphaMod(circle_texture, c.a);
         SDL_RenderCopy(renderer, circle_texture, NULL, &as_sdl_rect);
+    }
+
+    static void render_textured_rectangle(
+            SDL_Renderer* renderer,
+            SDL_Texture* texture,
+            const rectangle rect,
+            const color c
+            ){
+        SDL_Rect as_sdl_rect = {
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h
+        };
+
+        SDL_SetTextureColorMod(texture, c.r, c.g, c.b);
+        SDL_SetTextureAlphaMod(texture, c.a);
+        SDL_RenderCopy(renderer, texture, NULL, &as_sdl_rect);
     }
 
     static void render_rectangle(
@@ -296,16 +333,18 @@ namespace game{
 
         TURRET_SINGLE_SHOOTER,
         TURRET_REPEATER,
+        TURRET_FREEZER,
 
-        TURRET_FREEZER
+        TURRET_TYPE_COUNT
     };
 
     enum projectile_type{
         PROJECTILE_NULL,
 
         PROJECTILE_BULLET,
-
         PROJECTILE_EXPLOSIVE,
+
+        PROJECTILE_TYPE_COUNT
     };
 
     struct turret_projectile{
@@ -357,6 +396,9 @@ namespace game{
         bool escape_down;
         bool w_down;
         bool return_down;
+
+        bool left_down;
+        bool right_down;
     };
 
     struct wave_spawn_list_entry{
@@ -365,7 +407,14 @@ namespace game{
         float y;
     };
 
+    // wtf.
+    struct unit_selection_ui{
+        int selected_unit;
+    };
+
     struct state{
+        unit_selection_ui unit_selection;
+
         input_state last_input;
         input_state input; 
         game_screen_state screen;
@@ -637,11 +686,6 @@ namespace game{
             game_state.game_wave = 0;
             game_state.wave_started = false;
         }
-
-        // test wave init
-        {
-            generate_wave(game_state);
-        }
     }
 
     static void handle_mouse_input(state& game_state, SDL_Event* event){
@@ -703,6 +747,29 @@ namespace game{
             }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
                 game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
                 setup_game(game_state);
+            }else if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                if(!game_state.wave_started){
+                    game_state.wave_started = true;
+                    generate_wave(game_state);
+                }
+            }
+        }
+
+        if(!game_state.input.left_down &&
+           game_state.last_input.left_down){
+            if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                if(!game_state.wave_started){
+                    game_state.unit_selection.selected_unit--;
+                }
+            }
+        }
+
+        if(!game_state.input.right_down &&
+           game_state.last_input.right_down){
+            if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                if(!game_state.wave_started){
+                    game_state.unit_selection.selected_unit++;
+                }
             }
         }
     }
@@ -725,6 +792,16 @@ namespace game{
             case SDL_SCANCODE_ESCAPE:
             {
                 game_state.input.escape_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_LEFT:
+            {
+                game_state.input.left_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_RIGHT:
+            {
+                game_state.input.right_down = keydown;
             }
             break;
         }
@@ -903,6 +980,17 @@ namespace game{
     }
 
     static void render_gameplay(state& game_state, SDL_Renderer* renderer){
+
+        // draw the background / backdrop
+        {
+            gfx::render_textured_rectangle(
+                    renderer,
+                    gfx::backdrop_texture,
+                    {0, 0, 1024, 768},
+                    gfx::white
+                    );
+        }
+
         // draw the tree
         {
             gfx::render_rectangle(renderer, 
@@ -1091,7 +1179,7 @@ namespace game{
                     gfx::white);
         }
         text_y_layout += advance_y;
-        {
+        if(!game_state.wave_started){
             char expect_enemies_text[255];
             snprintf(expect_enemies_text, 255, "ENEMIES IN WAVE: %d", game_state.wave_spawn_list_entry_count);
             gfx::render_centered_text(
@@ -1101,9 +1189,7 @@ namespace game{
                     text_y_layout,
                     expect_enemies_text, 
                     gfx::white);
-        }
-        text_y_layout += advance_y;
-        {
+        }else{
             char enemies_text[255];
             snprintf(enemies_text, 255, "ENEMIES LEFT: %d", game_state.enemies_in_wave);
             gfx::render_centered_text(
@@ -1114,6 +1200,7 @@ namespace game{
                     enemies_text, 
                     gfx::white);
         }
+
         text_y_layout += advance_y;
         {
             char points_to_spend_text[255];
@@ -1125,6 +1212,43 @@ namespace game{
                     text_y_layout,
                     points_to_spend_text, 
                     gfx::white);
+        }
+
+        // Unit selection UI.
+        // maybe buttons?
+        {
+            // an update? Impossibru!
+            game_state.unit_selection.selected_unit =
+                clamp<int>(game_state.unit_selection.selected_unit, 0, TURRET_TYPE_COUNT-2);
+            if(!game_state.wave_started){
+                const float ui_selection_box_size = 128;
+                const float ui_selection_layout_y = 768 - (ui_selection_box_size * 1.05);
+                float ui_selection_layout_x = virtual_window_width * 0.1;
+
+                for(unsigned unit_index = TURRET_SINGLE_SHOOTER;
+                        unit_index < TURRET_TYPE_COUNT; // TURRET_NULL doesn't count
+                        ++unit_index){
+                    gfx::color draw_color = gfx::white;
+                    if((unit_index) == game_state.unit_selection.selected_unit+1){
+                        draw_color = gfx::green;
+                    }
+
+                    gfx::rectangle draw_rect =
+                    {
+                        ui_selection_layout_x,
+                        ui_selection_layout_y,
+                        ui_selection_box_size,
+                        ui_selection_box_size
+                    };
+
+                    ui_selection_layout_x += (ui_selection_box_size * 1.10);
+                    gfx::render_rectangle( 
+                            renderer,
+                            draw_rect,
+                            draw_color
+                            );
+                }
+           }
         }
     }
 
@@ -1408,6 +1532,9 @@ int main(int argc, char** argv){
 
     gfx::circle_texture = 
         gfx::load_image_to_texture(renderer, "data/circle.png");
+
+    gfx::backdrop_texture =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/backdrop.png");
 
     // too lazy to implement my
     // own independent resolution.
