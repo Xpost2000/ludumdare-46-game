@@ -1,3 +1,7 @@
+/*
+ * I'm very much aware all the types here are nearly the same
+ * thing...
+ */
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_image.h>
@@ -189,12 +193,14 @@ namespace game{
     };
 
     enum enemy_type{
+        ENEMY_NULL,
+
         ENEMY_BASIC_LUMBERJACK,
         ENEMY_SKINNY_LUMBERJACK,
         ENEMY_FAT_LUMBERJACK,
         ENEMY_ANARCHIST,
         ENEMY_LOGGING_MACHINES,
-        ENEMY_ANTHROPHORMORPHIC_ANT,
+        ENEMY_ANTHROPORMORPHIC_ANT,
 
         ENEMY_TYPE_COUNT
     };
@@ -227,7 +233,7 @@ namespace game{
         int max_defense;
         int defense;
 
-        int speed;
+        float speed;
 
         bool frozen;
     };
@@ -245,13 +251,65 @@ namespace game{
         int defense;
     };
 
+    // Mines are not turrets.
+    enum turret_type{
+        TURRET_NULL,
+
+        TURRET_SINGLE_SHOOTER,
+        TURRET_REPEATER,
+
+        TURRET_FREEZER
+    };
+
+    enum projectile_type{
+        PROJECTILE_NULL,
+
+        PROJECTILE_BULLET,
+
+        PROJECTILE_EXPLOSIVE,
+    };
+
+    struct turret_projectile{
+        projectile_type type;
+
+        float x;
+        float y;
+        float w;
+        float h;
+
+        float speed;
+    };
+
+    struct turret_unit{
+        turret_type type;
+
+        float x;
+        float y;
+        float w;
+        float h;
+
+        float health;
+        float max_health;
+
+        float defense;
+        float max_defense;
+    };
+
     static constexpr size_t MAX_ENEMIES_IN_GAME = 512;
+    static constexpr size_t MAX_TURRETS_IN_GAME = 512;
+    static constexpr size_t MAX_PROJECTILES_IN_GAME = 512;
 
     // mostly for button presses.
     struct input_state{
         bool escape_down;
         bool w_down;
         bool return_down;
+    };
+
+    struct wave_spawn_list_entry{
+        enemy_type type;
+        float x;
+        float y;
     };
 
     struct state{
@@ -266,8 +324,18 @@ namespace game{
         bool wave_started;
         int game_wave;
 
+        int points;
+
+        turret_unit turret_units[MAX_TURRETS_IN_GAME];
+        turret_projectile projectiles[MAX_PROJECTILES_IN_GAME];
+
         int enemies_in_wave;
         enemy_entity enemies[MAX_ENEMIES_IN_GAME];
+
+        float wave_spawn_delay;
+        float wave_spawn_timer;
+        int wave_spawn_list_entry_count;
+        wave_spawn_list_entry wave_spawn_list[MAX_ENEMIES_IN_GAME];
 
         float time_until_wave_ends;
         float preparation_timer;
@@ -275,46 +343,148 @@ namespace game{
         tree_entity tree;
     };
 
-    /*
-     * @TODO jerry:
-     *
-     * Generate these things in a circle shape / path.
-     */
-    static void push_enemy(state& game_state, enemy_entity enemy){
-        enemy_entity* current = 
-            &game_state.enemies[game_state.enemies_in_wave++];
-
-        *current = enemy;
+    static void clear_wave_spawn_list(state& game_state){
+        for(int wave_entry = 0; 
+            wave_entry < MAX_ENEMIES_IN_GAME;
+            ++wave_entry){
+            game_state.wave_spawn_list[wave_entry].type = ENEMY_NULL;
+        }
     }
 
+    static void push_wave_entry(state& game_state,
+            enemy_type push_entry_type,
+            float x,
+            float y){
+        unsigned free_index = 0;
+        {
+            for(unsigned wave_entry = 0;
+                wave_entry < MAX_ENEMIES_IN_GAME;
+                ++wave_entry){
+                if(game_state.wave_spawn_list[wave_entry].type == ENEMY_NULL){
+                    free_index = wave_entry;
+                    break;
+                }
+            }
+        }
+
+        wave_spawn_list_entry* spawn_list_entry =
+            &game_state.wave_spawn_list[free_index]; 
+
+        spawn_list_entry->type = push_entry_type;
+        spawn_list_entry->x = x;
+        spawn_list_entry->y = y;
+        
+        game_state.wave_spawn_list_entry_count++;
+    }
+
+    static void place_selected_unit(game_state, mouse_x, mouse_y){
+    }
+
+    static enemy_entity generate_enemy_of_type(enemy_type type, float x, float y){
+        enemy_entity result = {};
+
+        result.type = type;
+        result.x = x;
+        result.y = y;
+
+        result.w = 32;
+        result.h = 32;
+
+        // stupid
+        const float pixel_speed_scale = 60.0f;
+
+        switch(type){
+            case ENEMY_BASIC_LUMBERJACK:
+            {
+                result.max_health = 100;
+                result.health = 100;
+
+                result.max_defense = 30;
+                result.defense = 30;
+                result.speed = 1.45f * pixel_speed_scale;
+            }
+            break;
+            case ENEMY_SKINNY_LUMBERJACK:
+            {
+                result.max_health = 45;
+                result.health = 45;
+
+                result.max_defense = 15;
+                result.defense = 15;
+                result.speed = 2.85f * pixel_speed_scale;
+            }
+            break;
+            case ENEMY_FAT_LUMBERJACK:
+            {
+                result.max_health = 250;
+                result.health = 250;
+
+                result.max_defense = 85;
+                result.defense = 85;
+                result.speed = 1.00f * pixel_speed_scale;
+                result.w *= 3;
+                result.h *= 3;
+            }
+            break;
+            case ENEMY_ANARCHIST:
+            {
+                result.max_health = 50;
+                result.health = 50;
+
+                result.max_defense = 0;
+                result.defense = 0;
+                result.speed = 3.45f * pixel_speed_scale;
+            }
+            break;
+            case ENEMY_LOGGING_MACHINES:
+            {
+                result.max_health = 400;
+                result.health = 400;
+
+                result.max_defense = 100;
+                result.defense = 100;
+                result.speed = 0.85f * pixel_speed_scale;
+
+                result.w *= 5;
+                result.h *= 5;
+            }
+            break;
+            case ENEMY_ANTHROPORMORPHIC_ANT:
+            {
+                result.max_health = 50;
+                result.health = 50;
+
+                result.max_defense = 30;
+                result.defense = 30;
+                result.speed = 3.45f * pixel_speed_scale;
+            }
+            break;
+        }
+
+        return result;
+    }
+
+    // probably going to take a fixed list of objects to
+    // spawn......
+    //
+    // I could implement a weighted random list really quickly I guess...
     static void generate_wave(state& game_state){
-        push_enemy(game_state, 
-                {
-                ENEMY_BASIC_LUMBERJACK,
-                0, 0, 32, 32,
+        // Each entry should probably set their own spawn timer
+        // so the game looks like it's taking "random" time for
+        // generation
+        game_state.wave_spawn_delay = 2.45f;
+        game_state.wave_spawn_timer = game_state.wave_spawn_delay;
 
-                100, 100,
+        for(int i = 0; i < 10; ++i){
+            const float angle = i * 36;
+            const float radians = angle * (M_PI / 180.0f);
+            const float radius = 450;
 
-                30, 30,
-
-                4,
-
-                false
-                });
-
-        push_enemy(game_state, 
-                {
-                ENEMY_BASIC_LUMBERJACK,
-                64, 64, 32, 32,
-
-                100, 100,
-
-                30, 30,
-
-                4,
-
-                false
-                });
+            push_wave_entry(game_state, 
+                    ENEMY_BASIC_LUMBERJACK,
+                    (cosf(radians)+1) * radius,
+                    (sinf(radians)+1) * radius);
+        }
     }
 
     static void setup_game(state& game_state){
@@ -336,6 +506,31 @@ namespace game{
         {
             generate_wave(game_state);
         }
+
+        // should be enough to build a few units or something like that.
+        game_state.points = 3000;
+
+        // null empty every single list...
+        {
+            for(unsigned turret_entry = 0;
+                turret_entry < MAX_TURRETS_IN_GAME;
+                ++turret_entry){
+                game_state.turret_units[turret_entry].type = TURRET_NULL;
+            }
+
+            for(unsigned projectile_entry = 0;
+                projectile_entry < MAX_PROJECTILES_IN_GAME;
+                ++projectile_entry){
+                game_state.projectiles[projectile_entry].type = PROJECTILE_NULL;
+            }
+
+            for(unsigned enemy_entry = 0;
+                enemy_entry < MAX_ENEMIES_IN_GAME;
+                ++enemy_entry){
+                game_state.wave_spawn_list[enemy_entry].type = ENEMY_NULL;
+                game_state.enemies[enemy_entry].type = ENEMY_NULL;
+            }
+        }
     }
 
     static void handle_mouse_input(state& game_state, SDL_Event* event){
@@ -352,9 +547,14 @@ namespace game{
                 bool button_down = event->type == SDL_MOUSEBUTTONDOWN;
                 uint8_t button = event->button.button;
 
-                if(button == SDL_BUTTON_LEFT){
-                }else if(button == SDL_BUTTON_MIDDLE){
-                }else if(button == SDL_BUTTON_RIGHT){
+                if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                    if(button == SDL_BUTTON_LEFT){
+                        // place selected unit and pay.
+                        place_selected_unit(game_state, mouse_x, mouse_y);
+                    }else if(button == SDL_BUTTON_MIDDLE){
+                    }else if(button == SDL_BUTTON_RIGHT){
+                        // destroy selected unit and refund.
+                    }
                 }
             }
             break;
@@ -416,6 +616,32 @@ namespace game{
             break;
         }
     }
+    
+    static void push_enemy(state& game_state, const enemy_entity to_spawn){
+        unsigned free_index = 0;
+        {
+            for(unsigned enemy_index = 0;
+                enemy_index < MAX_ENEMIES_IN_GAME;
+                ++enemy_index){
+                enemy_entity* entry = 
+                    &game_state.enemies[enemy_index];
+                
+                bool can_replace = (entry->type == ENEMY_NULL);
+
+                if(can_replace){
+                    free_index = enemy_index;
+                    break;
+                }
+            }
+        }
+
+        game_state.enemies_in_wave++;
+
+        enemy_entity* free_entry = 
+            &game_state.enemies[free_index];
+
+        (*free_entry) = to_spawn;
+    }
 
     static void initialize(state& game_state, SDL_Renderer* renderer){
         static int font_sizes_array[FONT_SIZE_TYPES] = 
@@ -428,7 +654,6 @@ namespace game{
     static void render_gameover(state& game_state, SDL_Renderer* renderer){
         static float heading_text_scale = 1.0f; 
         heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
-        printf("%3.3f\n", heading_text_scale);
         render_centered_dynamically_scaled_text(
                 renderer,
                 FONT_SIZE_MEDIUM,
@@ -458,7 +683,6 @@ namespace game{
     static void render_mainmenu(state& game_state, SDL_Renderer* renderer){
         static float heading_text_scale = 1.0f; 
         heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
-        printf("%3.3f\n", heading_text_scale);
         render_centered_dynamically_scaled_text(
                 renderer,
                 FONT_SIZE_MEDIUM,
@@ -552,55 +776,103 @@ namespace game{
         {
             for(unsigned enemy_index = 0; enemy_index < game_state.enemies_in_wave; ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
-                gfx::render_rectangle(renderer, 
-                        {current_enemy->x,
-                         current_enemy->y,
-                         current_enemy->w,
-                         current_enemy->h},
-                        gfx::white);
-
-                const float bars_height = 4;
-                const float bars_start_y_offset = 
-                    current_enemy->y + current_enemy->h + 10;
-
-                // health bar
-                {
+                if(current_enemy->type != ENEMY_NULL){
                     gfx::render_rectangle(renderer, 
-                            {current_enemy->x,
-                            bars_start_y_offset,
+                            {
+                            current_enemy->x,
+                            current_enemy->y,
                             current_enemy->w,
-                            bars_height},
-                            gfx::red);
+                            current_enemy->h
+                            },
+                            gfx::white);
 
-                    const float health_percentage =
-                        (float)current_enemy->health / (float)current_enemy->max_health;
+                    const float bars_height = 4;
+                    const float bars_start_y_offset = 
+                        current_enemy->y + current_enemy->h + 10;
 
+                    // health bar
+                    {
+                        gfx::render_rectangle(renderer, 
+                                {current_enemy->x,
+                                bars_start_y_offset,
+                                current_enemy->w,
+                                bars_height},
+                                gfx::red);
+
+                        const float health_percentage =
+                            (float)current_enemy->health / (float)current_enemy->max_health;
+
+                        gfx::render_rectangle(renderer, 
+                                {current_enemy->x,
+                                bars_start_y_offset,
+                                current_enemy->w * health_percentage,
+                                bars_height},
+                                gfx::green);
+                    }
+
+                    // defense bar
+                    {
+                        gfx::render_rectangle(renderer, 
+                                {current_enemy->x,
+                                bars_start_y_offset + bars_height + 5,
+                                current_enemy->w,
+                                bars_height},
+                                gfx::yellow);
+
+                        const float defense_percentage =
+                            (float)game_state.tree.defense / (float)game_state.tree.max_defense;
+
+                        gfx::render_rectangle(renderer, 
+                                {current_enemy->x,
+                                bars_start_y_offset + bars_height + 5,
+                                current_enemy->w,
+                                bars_height},
+                                gfx::blue);
+                    }
+                }
+            }
+        }
+
+        // draw turrets
+        // these do not have the health bar.
+        // these will be visually redrawn to look different.
+        {
+            for(unsigned turret_entry = 0;
+                turret_entry < MAX_TURRETS_IN_GAME;
+                ++turret_entry){
+                turret_unit* current_unit =
+                    &game_state.turret_units[turret_entry];
+
+                if(current_unit->type != TURRET_NULL){
                     gfx::render_rectangle(renderer, 
-                            {current_enemy->x,
-                            bars_start_y_offset,
-                            current_enemy->w * health_percentage,
-                            bars_height},
+                            {
+                            current_unit->x,
+                            current_unit->y,
+                            current_unit->w,
+                            current_unit->h
+                            },
                             gfx::green);
                 }
+            }
+        }
 
-                // defense bar
-                {
+        // draw projectiles
+        {
+            for(unsigned projectile_entry = 0;
+                projectile_entry < MAX_PROJECTILES_IN_GAME;
+                ++projectile_entry){
+                turret_projectile* current_projectile =
+                    &game_state.projectiles[projectile_entry];
+
+                if(current_projectile->type == PROJECTILE_NULL){
                     gfx::render_rectangle(renderer, 
-                            {current_enemy->x,
-                            bars_start_y_offset + bars_height + 5,
-                            current_enemy->w,
-                            bars_height},
-                            gfx::yellow);
-
-                    const float defense_percentage =
-                        (float)game_state.tree.defense / (float)game_state.tree.max_defense;
-
-                    gfx::render_rectangle(renderer, 
-                            {current_enemy->x,
-                            bars_start_y_offset + bars_height + 5,
-                            current_enemy->w,
-                            bars_height},
-                            gfx::blue);
+                            {
+                            current_projectile->x,
+                            current_projectile->y,
+                            current_projectile->w,
+                            current_projectile->h
+                            },
+                            gfx::white);
                 }
             }
         }
@@ -629,6 +901,18 @@ namespace game{
                     1024,
                     text_y_layout,
                     enemies_text, 
+                    gfx::white);
+        }
+        text_y_layout += advance_y;
+        {
+            char points_to_spend_text[255];
+            snprintf(points_to_spend_text, 255, "$%d", game_state.points);
+            gfx::render_centered_text(
+                    renderer, 
+                    FONT_SIZE_BIG,
+                    1024,
+                    text_y_layout,
+                    points_to_spend_text, 
                     gfx::white);
         }
     }
@@ -668,6 +952,39 @@ namespace game{
     }
 
     static void update_gameplay(state& game_state, const float delta_time){
+        // handle wave spawning
+        // and other wave logic.
+        {
+            game_state.wave_spawn_timer -= delta_time;
+            // spawn from the first thing in the list.
+            if(game_state.wave_spawn_timer <= 0.0f){
+                game_state.wave_spawn_timer = game_state.wave_spawn_delay;
+                bool wave_empty = true;
+                for(unsigned wave_entry = 0;
+                        wave_entry < MAX_ENEMIES_IN_GAME;
+                        ++wave_entry){
+                    wave_spawn_list_entry* entry =
+                        &game_state.wave_spawn_list[wave_entry];
+
+                    if(entry->type != ENEMY_NULL){
+                        // actually spawn...
+                        {
+                            enemy_entity to_spawn =
+                                generate_enemy_of_type(entry->type, 
+                                        entry->x,
+                                        entry->y);
+
+                            push_enemy(game_state, to_spawn);
+
+                            entry->type = ENEMY_NULL;
+                            game_state.wave_spawn_list_entry_count--;
+                        }
+                        wave_empty = false;
+                        break;
+                    }
+                }
+            }
+        }
         // update enemies.
         {
             aabb tree_bounding_box = 
@@ -675,8 +992,12 @@ namespace game{
                 game_state.tree.x, game_state.tree.y,
                 game_state.tree.w, game_state.tree.h
             };
-            for(unsigned enemy_index = 0; enemy_index < game_state.enemies_in_wave; ++enemy_index){
+            for(unsigned enemy_index = 0; enemy_index < MAX_ENEMIES_IN_GAME; ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
+                // dead or doesn't exist, skip.
+                if(current_enemy->type == ENEMY_NULL || current_enemy->health == 0){ 
+                    continue;
+                }
                 tree_entity* target = &game_state.tree;
 
                 float direction_to_target_x = 0;
@@ -762,7 +1083,7 @@ int main(int argc, char** argv){
                 SDL_WINDOW_SHOWN
                 );
     SDL_Renderer* renderer =
-        SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     uint32_t current = SDL_GetTicks();
     uint32_t last = current;
@@ -775,8 +1096,6 @@ int main(int argc, char** argv){
     game::initialize(state, renderer);
 
     while(game_running){
-        current = SDL_GetTicks();
-
         SDL_Event event;
         while(SDL_PollEvent(&event)){
             switch(event.type){
@@ -810,10 +1129,13 @@ int main(int argc, char** argv){
         SDL_RenderPresent(renderer);
 
         // probably really dumb
-        last = SDL_GetTicks();
-        difference = last - current;
+        current = SDL_GetTicks();
+        difference = current - last;
+        last = current;
 
-        delta_time = 1/60.0f;//(difference / 1000.0f);
+        // last thing I'll do lmao
+        delta_time = (difference / 1000.0f);
+        delta_time = 1.0f / 60.0f;
     }
 
     Mix_CloseAudio();

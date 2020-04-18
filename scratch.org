@@ -27,10 +27,12 @@ Day 0:
 Basic mechanics... Basic screens
 
 Day 1:
-- [ ] Spawn Enemies with circle
-- [ ] Actually having a spawner.
-- [ ] Unit Selection From List
+- [X] Spawn Enemies with circle
+- [X] Actually having a spawner.
+- [ ] Wave System
 - [ ] Randomized Enemy Spawns
+- [ ] Unit Selection From List
+- [ ] Placing my first units.
 - [ ] Killable Enemies
 - [ ] Having bosses?
 - [ ] Particle System
@@ -38,9 +40,8 @@ Day 1:
 - [ ] Preview Screen for Wave
 - [ ] Prep time....
 - [ ] Upgrade System screen?
-- [ ] Different Types of Enemies
+- [X] Different Types of Enemies [Not unique enough but can be marked as done.]
 - [ ] Currency System
-- [ ] Wave System
 - [ ] Game Ending?
 - [ ] Art begins....
 - [ ] Audio production begins....
