@@ -6,6 +6,11 @@ THOUGHTS:
 This is the file that contains all of my scratch board ideas in text.
 Org mode EMACS 26, and maybe summaries.
 
+Maybe this'll be cool,
+make the menu look cooler,
+
+and make it resolution independent.
+
 Day 0:
 Day 1:
 Day 2:
@@ -40,6 +45,7 @@ IDEAS:
     Fat Lumberjack - Really slow, really really tough (boss)
     Anarchist - Kind of fast, but just temporarily disarms "tower" / "weapon"
     Logging Machines - Really slow, extra tough, maybe has multiple layers of armor?
+    Anthrophormorphic Ant
     
     Buildings:
     
