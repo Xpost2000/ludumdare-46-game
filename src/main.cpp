@@ -1,6 +1,10 @@
 /*
  * I know it's 2020. I'm sorry it runs in 1024 x 768.
  *
+ * Also this is not purposely obfuscated, I really was a complete
+ * idiot and decided to scratch this in one source file :/, protip
+ * I shouldn't do that next time.
+ *
  * I'm very much aware all the types here are nearly the same
  * thing...
  *
@@ -31,7 +35,11 @@
 
 #include <math.h>
 
+static char* game_name = "Treewatch";
+static char* title_string = "Treewatch LD46";
+
 #define STUPID_DEBUG
+#undef STUPID_DEBUG
 
 static constexpr unsigned int virtual_window_width = 1024;
 static constexpr unsigned int virtual_window_height = 768;
@@ -84,6 +92,7 @@ namespace gfx{
 
     SDL_Texture* circle_texture;
     SDL_Texture* backdrop_texture;
+    texture_with_origin_info turret_texture;
     texture_with_origin_info tree_texture;
 
     // for the selection UI
@@ -132,10 +141,12 @@ namespace gfx{
     };
 
     static color white = {255, 255, 255, 255};
+    static color dark_gray = {64, 64, 64, 255};
     static color red = {255, 0, 0, 255};
     static color green = {0, 255, 0, 255};
     static color blue = {0, 0, 255, 255};
-    static color yellow = {0, 255, 255, 255};
+    static color cyan = {0, 255, 255, 255};
+    static color yellow = {255, 255, 0, 255};
 
     struct rectangle{
         float x;
@@ -319,6 +330,27 @@ namespace game{
         float lifetime;
     };
 
+    // COMMIT DIE????
+    // like actually.... WTF??????!!!!
+    static constexpr size_t tilemap_height = (virtual_window_height / 32);
+    static constexpr size_t tilemap_width = (virtual_window_width / 32);
+    uint8_t backdrop_tilemap[tilemap_height][tilemap_width] = 
+    {
+    };
+
+    // Perlin noise distribution so it doesn't look like poop
+    static void sprinkle_in_tilemap(size_t amount, uint8_t what){
+        // @TODO jerry: Perlin noise. Blue noise if I can get it...
+    }
+
+    static void paint_square_in_tilemap(int x, int y, int w, int h, uint8_t what){
+        for(int i = 0; i < h; ++i){
+            for(int j = 0; j < w; ++j){
+                backdrop_tilemap[i+y][j+x] = what;
+            }
+        }
+    }
+
     enum game_screen_state{
         GAME_SCREEN_STATE_MAIN_MENU,
         GAME_SCREEN_STATE_ATTRACT_MODE,
@@ -463,16 +495,26 @@ namespace game{
     static constexpr size_t MAX_FLOATING_MESSAGES_IN_GAME = 512;
 
     // mostly for button presses.
+    // this entire thing is one big WTF?
     struct input_state{
         int mouse_x;
         int mouse_y;
 
+        // WTF?
         bool escape_down;
+        // WTF?
         bool return_down;
 
+        // WTF?
         bool left_down;
+        // WTF?
         bool right_down;
 
+        // WTF?
+        bool up_down;
+        // WTF?
+        bool down_down;
+        // WTF?
         bool tab_down;
 #ifdef STUPID_DEBUG
         // skip round instantly.
@@ -493,13 +535,18 @@ namespace game{
         int selected_unit;
     };
 
-    // wtf
+    // wtf?
     static constexpr short max_reward_flash_times = 20;
+    // wtf?
     static constexpr float max_reward_flash_fx_timer = 0.075f;
 
     struct state{
+        // WTF?
+        int main_menu_option_selection_index;
+
         unit_selection_ui unit_selection;
 
+        bool paused;
         bool show_wave_preview;
 
         input_state last_input;
@@ -1038,14 +1085,36 @@ namespace game{
                 game_running = false;
             }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
                 game_state.screen = GAME_SCREEN_STATE_MAIN_MENU;
+            }else if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
+                game_state.screen = GAME_SCREEN_STATE_MAIN_MENU;
+                game_state.paused = true;
             }
         }
 
         if(!game_state.input.return_down &&
            game_state.last_input.return_down){
             if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
-                game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
-                setup_game(game_state);
+                switch(game_state.main_menu_option_selection_index){
+                    case 0:
+                    {
+                        game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
+                        if(!game_state.paused){
+                            setup_game(game_state);
+                        }else{
+                            game_state.paused = false;
+                        }
+                    }
+                    break;
+                    case 1:
+                    {
+                    }
+                    break;
+                    case 2:
+                    {
+                        game_running = false;
+                    }
+                    break;
+                }
             }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
                 game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
                 setup_game(game_state);
@@ -1082,6 +1151,26 @@ namespace game{
                 }
             }
         }
+
+        if(!game_state.input.up_down &&
+            game_state.last_input.up_down){
+            if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
+                game_state.main_menu_option_selection_index--;
+
+                game_state.main_menu_option_selection_index =
+                    clamp<int>(game_state.main_menu_option_selection_index, 0, 2);
+            }
+        }
+
+        if(!game_state.input.down_down &&
+            game_state.last_input.down_down){
+            if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
+                game_state.main_menu_option_selection_index++;
+
+                game_state.main_menu_option_selection_index =
+                    clamp<int>(game_state.main_menu_option_selection_index, 0, 2);
+            }
+        }
     }
 
     static void handle_key_input(state& game_state, SDL_Event* event){
@@ -1109,6 +1198,16 @@ namespace game{
             case SDL_SCANCODE_ESCAPE:
             {
                 game_state.input.escape_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_UP:
+            {
+                game_state.input.up_down = keydown;
+            }
+            break;
+            case SDL_SCANCODE_DOWN:
+            {
+                game_state.input.down_down = keydown;
             }
             break;
             case SDL_SCANCODE_LEFT:
@@ -1233,6 +1332,13 @@ namespace game{
         for(int i = 0; i < FONT_SIZE_TYPES; ++i){
             gfx::fonts[i] = TTF_OpenFont("data/pixel_font.ttf", font_sizes_array[i]);
         }
+
+        // perhaps this should grow dynamically each round?
+        static constexpr int square_size = 5;
+        paint_square_in_tilemap(tilemap_width / 2 - (square_size / 2),
+                tilemap_height / 2 - (square_size / 2),
+                square_size,
+                square_size, 1);
     }
 
     static void distribute_reward_for_round(state& game_state){
@@ -1276,6 +1382,19 @@ namespace game{
                 gfx::white);
     }
 
+    enum main_menu_option{
+        OPTION_START_GAME,
+        OPTION_INSTRUCTIONS,
+        OPTION_QUIT,
+        OPTION_COUNT
+    };
+    static char* option_strings[OPTION_COUNT] =
+    {
+        "Start Game",
+        "Instructions / Help",
+        "Quit Game"
+    };
+
     static void render_mainmenu(state& game_state, SDL_Renderer* renderer, float delta_time){
         static float heading_text_scale = 1.0f; 
         heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
@@ -1285,31 +1404,54 @@ namespace game{
                 heading_text_scale,
                 1024,
                 300,
-                "Ludum Dare 46 Game",
+                title_string,
                 gfx::yellow);
 
-        render_centered_text(
-                renderer,
-                FONT_SIZE_MEDIUM,
-                1024,
-                700,
-                "Enter to Start Game",
-                gfx::white);
+        float layout_options_y = 700;
+        const float advance_y = 68;
 
-        render_centered_text(
-                renderer,
-                FONT_SIZE_MEDIUM,
-                1024,
-                768,
-                "Escape to Quit Game",
-                gfx::white);
+        for(int option_index = 0;
+            option_index < OPTION_COUNT;
+            ++option_index){
+            gfx::color draw_color = gfx::white;
+
+            if(option_index == game_state.main_menu_option_selection_index){
+                draw_color = gfx::yellow;
+            }
+
+            render_centered_text(
+                    renderer,
+                    FONT_SIZE_MEDIUM,
+                    1024,
+                    layout_options_y,
+                    option_strings[option_index],
+                    draw_color);
+
+            layout_options_y += advance_y;
+        }
+
+/*         render_centered_text( */
+/*                 renderer, */
+/*                 FONT_SIZE_MEDIUM, */
+/*                 1024, */
+/*                 700, */
+/*                 "Enter to Start Game", */
+/*                 gfx::white); */
+
+/*         render_centered_text( */
+/*                 renderer, */
+/*                 FONT_SIZE_MEDIUM, */
+/*                 1024, */
+/*                 768, */
+/*                 "Escape to Quit Game", */
+/*                 gfx::white); */
 
         render_centered_text(
                 renderer,
                 FONT_SIZE_SMALL,
                 1024,
                 1200,
-                "Game by Xpost2000 for Ludum Dare 46",
+                "Game by Xpost2000 for Ludum Dare 46, navigate with arrow keys.",
                 gfx::white);
     }
 
@@ -1318,12 +1460,40 @@ namespace game{
 
         // draw the background / backdrop
         {
-            gfx::render_textured_rectangle(
-                    renderer,
-                    gfx::backdrop_texture,
-                    {0, 0, 1024, 768},
-                    gfx::white
-                    );
+            /* gfx::render_textured_rectangle( */
+            /*         renderer, */
+            /*         gfx::backdrop_texture, */
+            /*         {0, 0, 1024, 768}, */
+            /*         gfx::white */
+            /*         ); */
+            for(size_t y = 0; y < tilemap_height; ++y){
+                for(size_t x = 0; x < tilemap_width; ++x){
+                    switch(backdrop_tilemap[y][x]){
+                        case 0:
+                        {
+                            gfx::render_text(
+                                    renderer,
+                                    FONT_SIZE_MEDIUM,
+                                    x * 32, 
+                                    y * 32,
+                                    ",",
+                                    gfx::dark_gray);
+                        }
+                        break;
+                        case 1:
+                        {
+                            gfx::render_text(
+                                    renderer,
+                                    FONT_SIZE_MEDIUM,
+                                    x * 32, 
+                                    y * 32,
+                                    ",",
+                                    gfx::green);
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
         // draw enemies
@@ -1347,6 +1517,7 @@ namespace game{
                             gfx::white 
                             );
 
+#ifdef STUPID_DEBUG
                     gfx::render_rectangle(
                             renderer, 
                             {
@@ -1356,6 +1527,7 @@ namespace game{
                             current_enemy->h
                             },
                             gfx::white);
+#endif
 
                     const float bars_height = 4;
                     const float bars_start_y_offset = 
@@ -1381,6 +1553,7 @@ namespace game{
                                 gfx::green);
                     }
 
+#ifdef STUPID_DEBUG
                     // defense bar
                     {
                         gfx::render_rectangle(renderer, 
@@ -1400,6 +1573,7 @@ namespace game{
                                 bars_height},
                                 gfx::blue);
                     }
+#endif
                 }
             }
         }
@@ -1415,6 +1589,40 @@ namespace game{
                     &game_state.turret_units[turret_entry];
 
                 if(current_unit->type != TURRET_NULL){
+                    gfx::color draw_color = gfx::green;
+                    
+                    switch(current_unit->type){
+                        case TURRET_SINGLE_SHOOTER:
+                        {
+                            draw_color = gfx::green;
+                        }
+                        break;
+                        case TURRET_REPEATER:
+                        {
+                            draw_color = gfx::red;
+                        }
+                        break;
+                        case TURRET_FREEZER:
+                        {
+                            draw_color = gfx::cyan;
+                        }
+                        break;
+                    }
+
+                    gfx::render_textured_rectangle(
+                            renderer,
+                            gfx::turret_texture.texture,
+                            { 
+                            current_unit->x + (current_unit->w / 2) -
+                            ((gfx::turret_texture.width * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_x),
+                            current_unit->y + (current_unit->h / 2) -
+                            ((gfx::turret_texture.height * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_y),
+                            gfx::turret_texture.width * gfx::turret_texture.at_scale,
+                            gfx::turret_texture.height * gfx::turret_texture.at_scale
+                            },
+                            draw_color);
+
+#ifdef STUPID_DEBUG
                     gfx::render_rectangle(renderer, 
                             {
                             current_unit->x,
@@ -1422,7 +1630,8 @@ namespace game{
                             current_unit->w,
                             current_unit->h
                             },
-                            gfx::green);
+                            draw_color);
+#endif
                 }
             }
         }
@@ -1452,7 +1661,21 @@ namespace game{
                     circle_color);
 #endif
 
+            gfx::render_textured_rectangle(
+                    renderer,
+                    gfx::turret_texture.texture,
+                    { 
+                    game_state.input.mouse_x -
+                    ((gfx::turret_texture.width * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_x),
+                    game_state.input.mouse_y -
+                    ((gfx::turret_texture.height * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_y),
+                    gfx::turret_texture.width * gfx::turret_texture.at_scale,
+                    gfx::turret_texture.height * gfx::turret_texture.at_scale
+                    },
+                    draw_color);
 
+
+#ifdef STUPID_DEBUG
             gfx::render_rectangle(renderer, 
                     {
                     game_state.input.mouse_x - (ghost_placement.w / 2),
@@ -1461,6 +1684,7 @@ namespace game{
                     ghost_placement.h
                     },
                     draw_color);
+#endif
             SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
         }
 
@@ -1500,12 +1724,14 @@ namespace game{
                     },
                     gfx::white);
 
+#ifdef STUPID_DEBUG
             gfx::render_rectangle(renderer, 
                     {game_state.tree.x,
                     game_state.tree.y,
                     game_state.tree.w,
                     game_state.tree.h},
                     gfx::white);
+#endif
 
             const float bars_height = 8;
             const float bars_start_y_offset = 
@@ -1531,6 +1757,7 @@ namespace game{
                         gfx::green);
             }
 
+#ifdef STUPID_DEBUG
             // defense bar
             {
                 gfx::render_rectangle(renderer, 
@@ -1550,6 +1777,7 @@ namespace game{
                         bars_height},
                         gfx::blue);
             }
+#endif
         }
 
         // Unit selection UI.
@@ -1641,7 +1869,7 @@ namespace game{
                             virtual_window_width,
                             virtual_window_height,
                             "Press TAB to see the wave preview",
-                            gfx::blue);
+                            gfx::red);
                 }
             }
         }
@@ -1655,7 +1883,7 @@ namespace game{
                 snprintf(on_wave_text, 255, "WAVE: %d", game_state.game_wave);
                 gfx::render_centered_text(
                         renderer, 
-                        FONT_SIZE_BIG,
+                        FONT_SIZE_MEDIUM,
                         1024,
                         text_y_layout,
                         on_wave_text, 
@@ -1667,7 +1895,7 @@ namespace game{
                 snprintf(expect_enemies_text, 255, "ENEMIES IN WAVE: %d", game_state.wave_spawn_list_entry_count);
                 gfx::render_centered_text(
                         renderer, 
-                        FONT_SIZE_BIG,
+                        FONT_SIZE_MEDIUM,
                         1024,
                         text_y_layout,
                         expect_enemies_text, 
@@ -1677,7 +1905,7 @@ namespace game{
                 snprintf(enemies_text, 255, "ENEMIES LEFT: %d", game_state.enemies_in_wave);
                 gfx::render_centered_text(
                         renderer, 
-                        FONT_SIZE_BIG,
+                        FONT_SIZE_MEDIUM,
                         1024,
                         text_y_layout,
                         enemies_text, 
@@ -1710,14 +1938,16 @@ namespace game{
                     points_to_spend_text_color = gfx::white;
                 }
 
-                snprintf(points_to_spend_text, 255, "$%d", game_state.points);
-                gfx::render_centered_text(
-                        renderer, 
-                        FONT_SIZE_BIG,
-                        1024,
-                        text_y_layout,
-                        points_to_spend_text, 
-                        points_to_spend_text_color);
+                if(!game_state.wave_started){
+                    snprintf(points_to_spend_text, 255, "$%d", game_state.points);
+                    gfx::render_centered_text(
+                            renderer, 
+                            FONT_SIZE_BIG,
+                            1024,
+                            text_y_layout,
+                            points_to_spend_text, 
+                            points_to_spend_text_color);
+                }
             }
         }
 
@@ -2036,7 +2266,7 @@ int main(int argc, char** argv){
     srand(time(nullptr));
 
     SDL_Window* window =
-        SDL_CreateWindow("LD46: Keep it Alive!", 
+        SDL_CreateWindow(game_name, 
                 SDL_WINDOWPOS_CENTERED,
                 SDL_WINDOWPOS_CENTERED,
                 window_width,
@@ -2057,7 +2287,7 @@ int main(int argc, char** argv){
     game::initialize(state, renderer);
 
     gfx::tree_texture =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/evergreen.png");
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/evergreen.png");
     gfx::tree_texture.pivot_x = 0.5;
     gfx::tree_texture.pivot_y = 1.0;
 
@@ -2066,6 +2296,12 @@ int main(int argc, char** argv){
 
     gfx::backdrop_texture =
         gfx::load_image_to_texture(renderer, "data/emergency-art/backdrop.png");
+
+    gfx::turret_texture = 
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/turret.png");
+    gfx::turret_texture.at_scale = 0.3f;
+    gfx::turret_texture.pivot_x = 0.5f;
+    gfx::turret_texture.pivot_y = 0.5f;
 
     gfx::enemy_cards[0] =
         gfx::load_image_to_texture(renderer, "data/emergency-art/logging_machine_card.png");
@@ -2084,28 +2320,28 @@ int main(int argc, char** argv){
         gfx::load_image_to_texture(renderer, "data/emergency-art/freezer_icon.png");
 
     gfx::enemy_textures[0] =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/lumberjack.png");
     gfx::enemy_textures[0].at_scale = 0.35f;
     gfx::enemy_textures[0].pivot_x = 0.5f;
     gfx::enemy_textures[0].pivot_y = 0.95f;
 
     gfx::enemy_textures[1] =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
-    gfx::enemy_textures[1].at_scale = 0.35f;
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/lumberjack.png");
+    gfx::enemy_textures[1].at_scale = 0.25f;
     gfx::enemy_textures[1].pivot_x = 0.5f;
-    gfx::enemy_textures[1].pivot_y = 0.95f;
+    gfx::enemy_textures[1].pivot_y = 0.5f;
 
     gfx::enemy_textures[2] =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
-    gfx::enemy_textures[2].at_scale = 0.80f;
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/lumberjack.png");
+    gfx::enemy_textures[2].at_scale = 0.60f;
     gfx::enemy_textures[2].pivot_x = 0.5f;
-    gfx::enemy_textures[2].pivot_y = 0.95f;
+    gfx::enemy_textures[2].pivot_y = 0.5f;
 
     gfx::enemy_textures[3] =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/anarchist.png");
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/anarchist.png");
     gfx::enemy_textures[3].at_scale = 0.35f;
     gfx::enemy_textures[3].pivot_x = 0.5f;
-    gfx::enemy_textures[3].pivot_y = 0.95f;
+    gfx::enemy_textures[3].pivot_y = 0.5f;
 
     gfx::enemy_textures[4] =
         gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/logging_machine.png");

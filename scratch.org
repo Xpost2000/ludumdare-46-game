@@ -13,7 +13,6 @@ Org mode EMACS 26, and maybe summaries.
 
 Maybe this'll be cool,
 make the menu look cooler,
-
 and make it resolution independent.
 
 I should probably show cards depicting the enemies
@@ -65,14 +64,15 @@ Day 1:[8:00AM - 11:30PM]
 - [X] Sprites & Animation
 - [ ] Make notification to open show tab disappear.
 - [ ] Game Ending?[OPTIONAL???]
-- [ ] Art begins....
+- [X] Art begins....
 - [ ] Audio production begins....
-- [ ] Game Balance....
-- [ ] Pause Menu...
-- [ ] Upgrade System screen?
+- [X] Game Balance.... [Surprisingly seems playable enough...]
+- [X] Pause Menu...
+- [ ] Upgrade System screen? [ Maybe not upgrade as much as allow you to heal the tree... ]
 Day 2: The game better be finished. ( 7:00AM - 1:45PM )
-- [ ] Use real collision detection code.
-- [ ] Clean up code
+- [ ] ASCII-ify art...
+- [ ] Clean up code [What cleanup?]
+- [ ] Perlin Noise for the backdrop....
 - [X] Resolution Independence? THX SDL2 I LOVE YOU SO MUCH FOR DOING THIS SO EASILY
 - [ ] Polish up art
 - [ ] Lerp and polish stuff
