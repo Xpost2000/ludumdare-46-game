@@ -27,11 +27,11 @@ try to target turrets if they're closer than the tree sometimes.
 Maybe there should be an upgrade system, to like... Water the tree
 or give it fertilizer or build fencing so it doesn't get hurt as easily
 
-Day 0:
+Day 0: [9:00PM - 11:30PM]
 
 Basic mechanics... Basic screens
 
-Day 1:
+Day 1:[8:00AM - 11:30PM]
 - [X] Spawn Enemies with circle
 - [X] Actually having a spawner.
 - [X] Wave System 
@@ -53,21 +53,29 @@ Day 1:
 - [X] Unit previews when placing.
 - [X] Prevent Units from being placed in each other.
 - [X] Distance limitting.
-- [ ] Enemy Spawns based on wave so things don't go nuts early on.
+- [X] Make Projectiles Faster
+- [X] Make Enemies Spawn farther? 
+- [X] Reward for waves.
+- [ ] Make bigger enemies have the ability to run-over turrets.
+- [ ] Enemy Spawns based on wave so things don't go nuts early on. [ wave based probability? ]
 - [ ] Particle System
+- [ ] Instructions
+- [ ] Figure damage formula.
 - [ ] Enemies try dodging?
-- [ ] Sprites & Animation
+- [X] Sprites & Animation
+- [ ] Make notification to open show tab disappear.
 - [ ] Game Ending?[OPTIONAL???]
 - [ ] Art begins....
 - [ ] Audio production begins....
 - [ ] Game Balance....
 - [ ] Pause Menu...
 - [ ] Upgrade System screen?
-Day 2: The game better be finished.
+Day 2: The game better be finished. ( 7:00AM - 1:45PM )
 - [ ] Use real collision detection code.
 - [ ] Clean up code
 - [X] Resolution Independence? THX SDL2 I LOVE YOU SO MUCH FOR DOING THIS SO EASILY
 - [ ] Polish up art
+- [ ] Lerp and polish stuff
 - [ ] Music / Sound Effects
 - [ ] Packaging / Distribution
 - [ ] Little polish things?

@@ -14,6 +14,10 @@
  *
  *  Also why did I not use templates...
  *  I'm going to be honest I kind of forgot lmao.
+ *
+ *  A stupid amount of globals, and I learned I shouldn't
+ *  have done this from scratch. Or rather I shouldn't have gone
+ *  cowboy mode.
  */
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
@@ -63,13 +67,58 @@ enum font_sizes{
 
 namespace gfx{
     TTF_Font* fonts[FONT_SIZE_TYPES];
+
+    // yes real long names very good.
+    // wait what
+    struct texture_with_origin_info{
+        SDL_Texture* texture;
+        int width;
+        int height;
+
+        float at_scale;
+
+        // percentage.
+        float pivot_x;
+        float pivot_y;
+    };
+
     SDL_Texture* circle_texture;
     SDL_Texture* backdrop_texture;
+    texture_with_origin_info tree_texture;
+
+    // for the selection UI
+    // 0 - logger
+    // 1 - lumberjack
+    // 2 - big lumberjack
+    // 3 - anarchist
+    SDL_Texture* enemy_cards[4]; 
+    // order same as enums.
+    texture_with_origin_info enemy_textures[5];
+    // matching turret type.
+    SDL_Texture* turret_cards[3];
 
     SDL_Texture* load_image_to_texture(SDL_Renderer* renderer, const char* path){
         SDL_Surface* surface = IMG_Load(path);
         SDL_Texture* result = 
             SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_FreeSurface(surface);
+
+        return result;
+    }
+
+    // set your own origin info afterwards.
+    texture_with_origin_info load_image_to_texture_with_origin_info(SDL_Renderer* renderer, const char* path){
+        texture_with_origin_info result = {};
+
+        SDL_Surface* surface = IMG_Load(path);
+
+        result.at_scale = 1;
+        result.width = surface->w;
+        result.height = surface->h;
+
+        result.texture = 
+            SDL_CreateTextureFromSurface(renderer, surface);
+
         SDL_FreeSurface(surface);
 
         return result;
@@ -258,6 +307,7 @@ namespace gfx{
 };
 
 namespace game{
+    static constexpr size_t unique_wave_count = 15;
     // cosmetic stuff...
     // and also for taunts!!!
     struct floating_message{
@@ -290,7 +340,6 @@ namespace game{
         ENEMY_FAT_LUMBERJACK,
         ENEMY_ANARCHIST,
         ENEMY_LOGGING_MACHINES,
-        ENEMY_ANTHROPORMORPHIC_ANT,
 
         ENEMY_TYPE_COUNT
     };
@@ -324,6 +373,11 @@ namespace game{
         int defense;
 
         float speed;
+
+        float damage_timer_delay;
+        float damage_timer;
+        float damage;
+        float defense_damage;
 
         bool frozen;
     };
@@ -439,6 +493,10 @@ namespace game{
         int selected_unit;
     };
 
+    // wtf
+    static constexpr short max_reward_flash_times = 20;
+    static constexpr float max_reward_flash_fx_timer = 0.075f;
+
     struct state{
         unit_selection_ui unit_selection;
 
@@ -473,6 +531,11 @@ namespace game{
         float preparation_timer;
 
         tree_entity tree;
+
+        // WTF am I doing.
+        bool reward_flashing_started;
+        int flash_iterations;
+        float reward_flash_fx_timer;
     };
 
     static void push_floating_message(state& game_state,
@@ -607,7 +670,7 @@ namespace game{
 
         // should probably be something else like
         // based off the targetting range?
-        if(closest_turret_distance <= 200.0f){
+        if(closest_turret_distance <= 150.0f){
             violating_distance_rule = true;
         }
 
@@ -619,6 +682,7 @@ namespace game{
 
             free_unit->x = x;
             free_unit->y = y;
+            game_state.points -= to_place.cost;
         }else{
             if(colliding_with_any){
                 push_floating_message(game_state, 
@@ -696,7 +760,6 @@ namespace game{
 
         if(game_state.points - to_place.cost >= 0){
             push_turret_unit(game_state, mouse_x - (to_place.w / 2), mouse_y - (to_place.h / 2), to_place);
-            game_state.points -= to_place.cost;
         }else{
             push_floating_message(game_state, 
                     mouse_x, mouse_y, 
@@ -726,7 +789,11 @@ namespace game{
 
                 result.max_defense = 30;
                 result.defense = 30;
-                result.speed = 1.45f * pixel_speed_scale;
+                result.speed = 1.25f * pixel_speed_scale;
+
+                result.damage_timer_delay = 1.6f;
+                result.damage = 15;
+                result.defense_damage = 15;
             }
             break;
             case ENEMY_SKINNY_LUMBERJACK:
@@ -736,7 +803,11 @@ namespace game{
 
                 result.max_defense = 15;
                 result.defense = 15;
-                result.speed = 2.85f * pixel_speed_scale;
+                result.speed = 2.05f * pixel_speed_scale;
+
+                result.damage_timer_delay = 1.0f;
+                result.damage = 5;
+                result.defense_damage = 2;
             }
             break;
             case ENEMY_FAT_LUMBERJACK:
@@ -746,9 +817,13 @@ namespace game{
 
                 result.max_defense = 85;
                 result.defense = 85;
-                result.speed = 1.00f * pixel_speed_scale;
+                result.speed = 0.90f * pixel_speed_scale;
                 result.w *= 3;
                 result.h *= 3;
+
+                result.damage_timer_delay = 3.0f;
+                result.damage = 20;
+                result.defense_damage = 15;
             }
             break;
             case ENEMY_ANARCHIST:
@@ -758,7 +833,11 @@ namespace game{
 
                 result.max_defense = 0;
                 result.defense = 0;
-                result.speed = 3.45f * pixel_speed_scale;
+                result.speed = 3.15f * pixel_speed_scale;
+
+                result.damage_timer_delay = 0.65;
+                result.damage = 2;
+                result.defense_damage = 2;
             }
             break;
             case ENEMY_LOGGING_MACHINES:
@@ -768,22 +847,26 @@ namespace game{
 
                 result.max_defense = 100;
                 result.defense = 100;
-                result.speed = 0.85f * pixel_speed_scale;
+                result.speed = 0.65f * pixel_speed_scale;
 
                 result.w *= 5;
                 result.h *= 5;
-            }
-            break;
-            case ENEMY_ANTHROPORMORPHIC_ANT:
-            {
-                result.max_health = 50;
-                result.health = 50;
 
-                result.max_defense = 30;
-                result.defense = 30;
-                result.speed = 3.45f * pixel_speed_scale;
+                result.damage_timer_delay = 4.5f;
+                result.damage = 30;
+                result.defense_damage = 40;
             }
             break;
+            /* case ENEMY_ANTHROPORMORPHIC_ANT: */
+            /* { */
+            /*     result.max_health = 50; */
+            /*     result.health = 50; */
+
+            /*     result.max_defense = 30; */
+            /*     result.defense = 30; */
+            /*     result.speed = 3.25f * pixel_speed_scale; */
+            /* } */
+            /* break; */
         }
 
         return result;
@@ -795,7 +878,6 @@ namespace game{
     // I could implement a weighted random list really quickly I guess...
     static void generate_wave(state& game_state){
         // 15 unique waves...
-        static constexpr size_t unique_wave_count = 15;
         static int wave_enemy_counts[unique_wave_count] = {
             10, 10, 10, 12, 15, 15, 15, 20, 20, 20, 20, 25, 25, 30, 35
         };
@@ -803,7 +885,7 @@ namespace game{
         // Each entry should probably set their own spawn timer
         // so the game looks like it's taking "random" time for
         // generation
-        game_state.wave_spawn_delay = 2.45f;
+        game_state.wave_spawn_delay = 2.05f;
         game_state.wave_spawn_timer = game_state.wave_spawn_delay;
 
         game_state.game_wave++;
@@ -813,7 +895,7 @@ namespace game{
             ++i){
             const float angle = static_cast<int>(rand() % 360+1);
             const float radians = angle * (M_PI / 180.0f);
-            const float radius = 450;
+            const float radius = 550;
 
             push_wave_entry(game_state, 
                     // skip ENEMY_NULL
@@ -830,6 +912,12 @@ namespace game{
                 ++enemy_entry){
             game_state.wave_spawn_list[enemy_entry] = wave_spawn_list_entry {};
             game_state.enemies[enemy_entry] = enemy_entity{};
+        }
+
+        for(unsigned projectile_entry = 0;
+            projectile_entry < MAX_PROJECTILES_IN_GAME;
+            ++projectile_entry){
+            game_state.projectiles[projectile_entry].type = PROJECTILE_NULL;
         }
 
         game_state.wave_spawn_timer = 0;
@@ -851,8 +939,8 @@ namespace game{
             game_state.tree.defense = 50;
             game_state.tree.max_defense = 50;
 
-            game_state.tree.w = 128;
-            game_state.tree.h = 128;
+            game_state.tree.w = 64;
+            game_state.tree.h = 64;
 
             game_state.tree.x = (1024 / 2) - (game_state.tree.w/2);
             game_state.tree.y = (768 / 2) - (game_state.tree.h/2);
@@ -907,7 +995,9 @@ namespace game{
                     if(button_down){
                         if(button == SDL_BUTTON_LEFT){
                             // place selected unit and pay.
-                            place_selected_unit(game_state, mouse_x, mouse_y);
+                            if(!game_state.wave_started && !game_state.show_wave_preview){
+                                place_selected_unit(game_state, mouse_x, mouse_y);
+                            }
                         }else if(button == SDL_BUTTON_MIDDLE){
                         }else if(button == SDL_BUTTON_RIGHT){
                             // destroy selected unit and refund.
@@ -1113,7 +1203,7 @@ namespace game{
                 // 2 mins and 30 seconds?
                 projectile.lifetime = 150;
 
-                projectile.speed = 200;
+                projectile.speed = 500;
 
                 projectile.damage = 35;
                 projectile.defense_damage = 15;
@@ -1145,7 +1235,19 @@ namespace game{
         }
     }
 
-    static void render_gameover(state& game_state, SDL_Renderer* renderer){
+    static void distribute_reward_for_round(state& game_state){
+        static int wave_rewards_for_rounds[unique_wave_count] = {
+            750, 750, 750, 750, 1000, 1000, 1250, 1250, 1250, 1400, 1500, 1600, 1700, 1800, 2000
+        };
+        int clamped_index = clamp<int>(game_state.game_wave, 0, unique_wave_count - 1);
+        game_state.points += wave_rewards_for_rounds[clamped_index];
+
+        game_state.reward_flashing_started = true;
+        game_state.reward_flash_fx_timer = max_reward_flash_fx_timer;
+        game_state.flash_iterations = 0;
+    }
+
+    static void render_gameover(state& game_state, SDL_Renderer* renderer, float delta_time){
         static float heading_text_scale = 1.0f; 
         heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
         render_centered_dynamically_scaled_text(
@@ -1174,7 +1276,7 @@ namespace game{
                 gfx::white);
     }
 
-    static void render_mainmenu(state& game_state, SDL_Renderer* renderer){
+    static void render_mainmenu(state& game_state, SDL_Renderer* renderer, float delta_time){
         static float heading_text_scale = 1.0f; 
         heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
         render_centered_dynamically_scaled_text(
@@ -1211,7 +1313,8 @@ namespace game{
                 gfx::white);
     }
 
-    static void render_gameplay(state& game_state, SDL_Renderer* renderer){
+    // deltatime is provided to update graphical effects...
+    static void render_gameplay(state& game_state, SDL_Renderer* renderer, float delta_time){
 
         // draw the background / backdrop
         {
@@ -1223,66 +1326,29 @@ namespace game{
                     );
         }
 
-        // draw the tree
-        {
-            gfx::render_rectangle(renderer, 
-                    {game_state.tree.x,
-                    game_state.tree.y,
-                    game_state.tree.w,
-                    game_state.tree.h},
-                    gfx::white);
-
-            const float bars_height = 8;
-            const float bars_start_y_offset = 
-                game_state.tree.y + game_state.tree.h + 10;
-
-            // health bar
-            {
-                gfx::render_rectangle(renderer, 
-                        {game_state.tree.x,
-                        bars_start_y_offset,
-                        game_state.tree.w,
-                        bars_height},
-                        gfx::red);
-
-                const float health_percentage =
-                    (float)game_state.tree.health / (float)game_state.tree.max_health;
-
-                gfx::render_rectangle(renderer, 
-                        {game_state.tree.x,
-                        bars_start_y_offset,
-                        game_state.tree.w * health_percentage,
-                        bars_height},
-                        gfx::green);
-            }
-
-            // defense bar
-            {
-                gfx::render_rectangle(renderer, 
-                        {game_state.tree.x,
-                        bars_start_y_offset + bars_height + 5,
-                        game_state.tree.w,
-                        bars_height},
-                        gfx::yellow);
-
-                const float defense_percentage =
-                    (float)game_state.tree.defense / (float)game_state.tree.max_defense;
-
-                gfx::render_rectangle(renderer, 
-                        {game_state.tree.x,
-                        bars_start_y_offset + bars_height + 5,
-                        game_state.tree.w,
-                        bars_height},
-                        gfx::blue);
-            }
-        }
-
         // draw enemies
         {
             for(unsigned enemy_index = 0; enemy_index < MAX_ENEMIES_IN_GAME; ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
                 if(current_enemy->type != ENEMY_NULL){
-                    gfx::render_rectangle(renderer, 
+                    unsigned enemy_texture_index = (current_enemy->type - 1);
+
+                    gfx::render_textured_rectangle( 
+                            renderer,
+                            gfx::enemy_textures[enemy_texture_index].texture,
+                            {
+                            (current_enemy->x + (current_enemy->w / 2)) -
+                            ((gfx::enemy_textures[enemy_texture_index].width * gfx::enemy_textures[enemy_texture_index].at_scale) * gfx::enemy_textures[enemy_texture_index].pivot_x),
+                            (current_enemy->y + (current_enemy->h / 2)) -
+                            ((gfx::enemy_textures[enemy_texture_index].height * gfx::enemy_textures[enemy_texture_index].at_scale) * gfx::enemy_textures[enemy_texture_index].pivot_y),
+                            gfx::enemy_textures[enemy_texture_index].width * gfx::enemy_textures[enemy_texture_index].at_scale,
+                            gfx::enemy_textures[enemy_texture_index].height * gfx::enemy_textures[enemy_texture_index].at_scale
+                            },
+                            gfx::white 
+                            );
+
+                    gfx::render_rectangle(
+                            renderer, 
                             {
                             current_enemy->x,
                             current_enemy->y,
@@ -1349,20 +1415,6 @@ namespace game{
                     &game_state.turret_units[turret_entry];
 
                 if(current_unit->type != TURRET_NULL){
-                    // everything is still top left aligned....
-                    //
-                    // I have to actually hack in the calculations
-                    // because nothing is centered.... Damn.
-#if 1
-                    gfx::color circle_color = gfx::blue;
-                    circle_color.a = 100;
-                    gfx::render_circle(renderer,
-                            current_unit->x + (current_unit->w / 2),
-                            current_unit->y + (current_unit->h / 2),
-                            current_unit->targetting_radius,
-                            circle_color);
-#endif
-
                     gfx::render_rectangle(renderer, 
                             {
                             current_unit->x,
@@ -1376,7 +1428,7 @@ namespace game{
         }
 
         // draw preview turret
-        {
+        if(!game_state.wave_started && !game_state.show_wave_preview){
             turret_unit ghost_placement = 
                 generate_turret_of_type((turret_type)(game_state.unit_selection.selected_unit+1));
 
@@ -1386,6 +1438,21 @@ namespace game{
             };
 
             SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            // everything is still top left aligned....
+            //
+            // I have to actually hack in the calculations
+            // because nothing is centered.... Damn.
+#if 1
+            gfx::color circle_color = gfx::blue;
+            circle_color.a = 100;
+            gfx::render_circle(renderer,
+                    game_state.input.mouse_x + (ghost_placement.w / 2),
+                    game_state.input.mouse_y + (ghost_placement.h / 2),
+                    ghost_placement.targetting_radius,
+                    circle_color);
+#endif
+
+
             gfx::render_rectangle(renderer, 
                     {
                     game_state.input.mouse_x - (ghost_placement.w / 2),
@@ -1418,98 +1485,85 @@ namespace game{
             }
         }
 
-        // UI
-        const unsigned advance_y = 100;
-        float text_y_layout = 100;
+        // draw the tree
         {
-            char on_wave_text[255];
-            snprintf(on_wave_text, 255, "WAVE: %d", game_state.game_wave);
-            gfx::render_centered_text(
-                    renderer, 
-                    FONT_SIZE_BIG,
-                    1024,
-                    text_y_layout,
-                    on_wave_text, 
+            gfx::render_textured_rectangle(
+                    renderer,
+                    gfx::tree_texture.texture,
+                    { 
+                    game_state.tree.x + (game_state.tree.w / 2) -
+                    ((gfx::tree_texture.width * gfx::tree_texture.at_scale) * gfx::tree_texture.pivot_x),
+                    game_state.tree.y + (game_state.tree.h / 2) -
+                    ((gfx::tree_texture.height * gfx::tree_texture.at_scale) * gfx::tree_texture.pivot_y),
+                    gfx::tree_texture.width * gfx::tree_texture.at_scale,
+                    gfx::tree_texture.height * gfx::tree_texture.at_scale
+                    },
                     gfx::white);
-        }
-        text_y_layout += advance_y;
-        if(!game_state.wave_started){
-            char expect_enemies_text[255];
-            snprintf(expect_enemies_text, 255, "ENEMIES IN WAVE: %d", game_state.wave_spawn_list_entry_count);
-            gfx::render_centered_text(
-                    renderer, 
-                    FONT_SIZE_BIG,
-                    1024,
-                    text_y_layout,
-                    expect_enemies_text, 
-                    gfx::white);
-        }else{
-            char enemies_text[255];
-            snprintf(enemies_text, 255, "ENEMIES LEFT: %d", game_state.enemies_in_wave);
-            gfx::render_centered_text(
-                    renderer, 
-                    FONT_SIZE_BIG,
-                    1024,
-                    text_y_layout,
-                    enemies_text, 
-                    gfx::white);
-        }
 
-        text_y_layout += advance_y;
-        {
-            char points_to_spend_text[255];
-            snprintf(points_to_spend_text, 255, "$%d", game_state.points);
-            gfx::render_centered_text(
-                    renderer, 
-                    FONT_SIZE_BIG,
-                    1024,
-                    text_y_layout,
-                    points_to_spend_text, 
+            gfx::render_rectangle(renderer, 
+                    {game_state.tree.x,
+                    game_state.tree.y,
+                    game_state.tree.w,
+                    game_state.tree.h},
                     gfx::white);
+
+            const float bars_height = 8;
+            const float bars_start_y_offset = 
+                game_state.tree.y + game_state.tree.h + 10;
+
+            // health bar
+            {
+                gfx::render_rectangle(renderer, 
+                        {game_state.tree.x,
+                        bars_start_y_offset,
+                        game_state.tree.w,
+                        bars_height},
+                        gfx::red);
+
+                const float health_percentage =
+                    (float)game_state.tree.health / (float)game_state.tree.max_health;
+
+                gfx::render_rectangle(renderer, 
+                        {game_state.tree.x,
+                        bars_start_y_offset,
+                        game_state.tree.w * health_percentage,
+                        bars_height},
+                        gfx::green);
+            }
+
+            // defense bar
+            {
+                gfx::render_rectangle(renderer, 
+                        {game_state.tree.x,
+                        bars_start_y_offset + bars_height + 5,
+                        game_state.tree.w,
+                        bars_height},
+                        gfx::yellow);
+
+                const float defense_percentage =
+                    (float)game_state.tree.defense / (float)game_state.tree.max_defense;
+
+                gfx::render_rectangle(renderer, 
+                        {game_state.tree.x,
+                        bars_start_y_offset + bars_height + 5,
+                        game_state.tree.w,
+                        bars_height},
+                        gfx::blue);
+            }
         }
 
         // Unit selection UI.
         // maybe buttons?
+        // This is here and splits up the text stuf
         {
-            // an update? Impossibru!
-            game_state.unit_selection.selected_unit =
-                clamp<int>(game_state.unit_selection.selected_unit, 0, TURRET_TYPE_COUNT-2);
+            // print the preview cards for all enemies that
+            // will show up
             if(!game_state.wave_started){
-                const float ui_selection_box_size = 128;
-                const float ui_selection_layout_y = virtual_window_height - (ui_selection_box_size * 1.05);
-                float ui_selection_layout_x = virtual_window_width * 0.1;
-
-                for(unsigned unit_index = TURRET_SINGLE_SHOOTER;
-                        unit_index < TURRET_TYPE_COUNT; // TURRET_NULL doesn't count
-                        ++unit_index){
-                    gfx::color draw_color = gfx::white;
-                    if((unit_index) == game_state.unit_selection.selected_unit+1){
-                        draw_color = gfx::green;
-                    }
-
-                    gfx::rectangle draw_rect =
-                    {
-                        ui_selection_layout_x,
-                        ui_selection_layout_y,
-                        ui_selection_box_size,
-                        ui_selection_box_size
-                    };
-
-                    ui_selection_layout_x += (ui_selection_box_size * 1.10);
-                    gfx::render_rectangle( 
-                            renderer,
-                            draw_rect,
-                            draw_color
-                            );
-                }
-
-                // print the preview cards for all enemies that
-                // will show up
                 if(game_state.show_wave_preview){
-                    const float ui_preview_card_box_size = 128;
-                    const float ui_preview_card_wrap_width = ui_preview_card_box_size * 7;
+                    const float ui_preview_card_box_size = 100;
+                    const float ui_preview_card_wrap_width = ui_preview_card_box_size * 8;
 
-                    float ui_preview_card_layout_y = (ui_preview_card_box_size * 2);
+                    float ui_preview_card_layout_y = (25);
                     float ui_preview_card_layout_x = virtual_window_width * 0.1;
 
                     for(unsigned wave_list_entry_index = 0;
@@ -1518,15 +1572,14 @@ namespace game{
                         wave_spawn_list_entry* entry = 
                             &game_state.wave_spawn_list[wave_list_entry_index];
 
-                        gfx::color draw_color = gfx::white;
-
+                        size_t card_texture_index = 0;
                         switch(entry->type){
-                            case ENEMY_BASIC_LUMBERJACK: { } break;
-                            case ENEMY_SKINNY_LUMBERJACK: { } break;
-                            case ENEMY_FAT_LUMBERJACK: { draw_color = gfx::red; } break;
-                            case ENEMY_ANARCHIST: { draw_color = gfx::color{0, 255, 255}; } break;
-                            case ENEMY_LOGGING_MACHINES: { draw_color = gfx::red; } break;
-                            case ENEMY_ANTHROPORMORPHIC_ANT: { draw_color = gfx::color{0, 255, 255}; } break;
+                            case ENEMY_BASIC_LUMBERJACK: { card_texture_index = 1; } break;
+                            case ENEMY_SKINNY_LUMBERJACK: { card_texture_index = 1; } break;
+                            case ENEMY_FAT_LUMBERJACK: { card_texture_index = 2; } break;
+                            case ENEMY_ANARCHIST: { card_texture_index = 3; } break;
+                            case ENEMY_LOGGING_MACHINES: { card_texture_index = 0; } break;
+                                                         /* case ENEMY_ANTHROPORMORPHIC_ANT: { draw_color = gfx::color{0, 255, 255}; } break; */
                         }
 
                         gfx::rectangle draw_rect =
@@ -1542,13 +1595,47 @@ namespace game{
                             ui_preview_card_layout_x = virtual_window_width * 0.1;
                             ui_preview_card_layout_y += ui_preview_card_box_size * 1.05;
                         }
-                        gfx::render_rectangle( 
+                        gfx::render_textured_rectangle( 
                                 renderer,
+                                gfx::enemy_cards[card_texture_index],
+                                draw_rect,
+                                gfx::white 
+                                );
+                    }
+                }else{
+                    // an update? Impossibru!
+                    game_state.unit_selection.selected_unit =
+                        clamp<int>(game_state.unit_selection.selected_unit, 0, TURRET_TYPE_COUNT-2);
+                    const float ui_selection_box_size = 128;
+                    const float ui_selection_layout_y = virtual_window_height - (ui_selection_box_size * 1.05);
+                    float ui_selection_layout_x = virtual_window_width * 0.1;
+
+                    for(unsigned unit_index = TURRET_SINGLE_SHOOTER;
+                            unit_index < TURRET_TYPE_COUNT; // TURRET_NULL doesn't count
+                            ++unit_index){
+                        gfx::color draw_color = gfx::white;
+                        if((unit_index) == game_state.unit_selection.selected_unit+1){
+                            draw_color = gfx::green;
+                        }
+
+                        gfx::rectangle draw_rect =
+                        {
+                            ui_selection_layout_x,
+                            ui_selection_layout_y,
+                            ui_selection_box_size,
+                            ui_selection_box_size
+                        };
+
+                        ui_selection_layout_x += (ui_selection_box_size * 1.10);
+                        gfx::render_textured_rectangle( 
+                                renderer,
+                                gfx::turret_cards[unit_index-1],
                                 draw_rect,
                                 draw_color
                                 );
                     }
-                }else{
+
+                    // Annoying.
                     gfx::render_centered_text(renderer,
                             FONT_SIZE_MEDIUM,
                             virtual_window_width,
@@ -1556,10 +1643,86 @@ namespace game{
                             "Press TAB to see the wave preview",
                             gfx::blue);
                 }
-           }
+            }
+        }
+
+        // UI
+        if(!game_state.show_wave_preview){
+            const unsigned advance_y = 100;
+            float text_y_layout = 100;
+            {
+                char on_wave_text[255];
+                snprintf(on_wave_text, 255, "WAVE: %d", game_state.game_wave);
+                gfx::render_centered_text(
+                        renderer, 
+                        FONT_SIZE_BIG,
+                        1024,
+                        text_y_layout,
+                        on_wave_text, 
+                        gfx::white);
+            }
+            text_y_layout += advance_y;
+            if(!game_state.wave_started){
+                char expect_enemies_text[255];
+                snprintf(expect_enemies_text, 255, "ENEMIES IN WAVE: %d", game_state.wave_spawn_list_entry_count);
+                gfx::render_centered_text(
+                        renderer, 
+                        FONT_SIZE_BIG,
+                        1024,
+                        text_y_layout,
+                        expect_enemies_text, 
+                        gfx::white);
+            }else{
+                char enemies_text[255];
+                snprintf(enemies_text, 255, "ENEMIES LEFT: %d", game_state.enemies_in_wave);
+                gfx::render_centered_text(
+                        renderer, 
+                        FONT_SIZE_BIG,
+                        1024,
+                        text_y_layout,
+                        enemies_text, 
+                        gfx::white);
+            }
+
+            text_y_layout += advance_y;
+            {
+                gfx::color points_to_spend_text_color = gfx::white;
+                char points_to_spend_text[255];
+
+                if(game_state.reward_flashing_started){
+                    game_state.reward_flash_fx_timer -= delta_time;
+
+                    if(game_state.reward_flash_fx_timer <= 0.0f){
+                        game_state.reward_flash_fx_timer = max_reward_flash_fx_timer;
+                        game_state.flash_iterations++;
+                    }
+
+                    if(game_state.flash_iterations >= max_reward_flash_times){
+                        game_state.reward_flashing_started = false;
+                    }
+
+                    if((game_state.flash_iterations % 2) == 0){
+                        points_to_spend_text_color = gfx::white;
+                    }else if((game_state.flash_iterations % 2) == 1){
+                        points_to_spend_text_color = gfx::green;
+                    }
+                }else{
+                    points_to_spend_text_color = gfx::white;
+                }
+
+                snprintf(points_to_spend_text, 255, "$%d", game_state.points);
+                gfx::render_centered_text(
+                        renderer, 
+                        FONT_SIZE_BIG,
+                        1024,
+                        text_y_layout,
+                        points_to_spend_text, 
+                        points_to_spend_text_color);
+            }
         }
 
         // floating text
+        // weird bug.
         {
             for(unsigned floating_message_index = 0;
                 floating_message_index < MAX_FLOATING_MESSAGES_IN_GAME;
@@ -1567,10 +1730,13 @@ namespace game{
                 floating_message* message = 
                     &game_state.floating_messages[floating_message_index];
                 if(message->lifetime > 0.0f){
+                    float percent_clamp =
+                        clamp<float>(message->lifetime / message->max_lifetime, 0.0f, 1.0f);
+
                     gfx::color draw_color = gfx::white;
                     draw_color.a = 
-                        (float)(255 * (float)(message->lifetime /
-                                    message->max_lifetime));
+                        clamp<uint8_t>(255 * percent_clamp, 0, 255);
+                    fprintf(stderr, "draw_color_a: %d\n", draw_color.a);
                     gfx::render_text(
                             renderer,
                             FONT_SIZE_MEDIUM,
@@ -1583,11 +1749,11 @@ namespace game{
         }
     }
 
-    static void render(state& game_state, SDL_Renderer* renderer){
+    static void render(state& game_state, SDL_Renderer* renderer, float delta_time){
         switch(game_state.screen){
             case GAME_SCREEN_STATE_MAIN_MENU:
             {
-                render_mainmenu(game_state, renderer);
+                render_mainmenu(game_state, renderer, delta_time);
             }
             break;
             case GAME_SCREEN_STATE_ATTRACT_MODE:
@@ -1596,12 +1762,12 @@ namespace game{
             break;
             case GAME_SCREEN_STATE_GAMEPLAY:
             {
-                render_gameplay(game_state, renderer);
+                render_gameplay(game_state, renderer, delta_time);
             }
             break;
             case GAME_SCREEN_STATE_GAME_OVER:
             {
-                render_gameover(game_state, renderer);
+                render_gameover(game_state, renderer, delta_time);
             }
             break;
             case GAME_SCREEN_STATE_PAUSE:
@@ -1622,6 +1788,7 @@ namespace game{
             if(game_state.wave_spawn_list_entry_count == 0 &&
                game_state.enemies_in_wave == 0){
                 finished_round(game_state);
+                distribute_reward_for_round(game_state);
             }
             // handle wave spawning
             // and other wave logic.
@@ -1740,7 +1907,7 @@ namespace game{
                                     projectile->type = PROJECTILE_NULL;
                                     projectile->lifetime = 0;
 
-                                    current_enemy->health = -1000;
+                                    current_enemy->health -= projectile->damage;
 
                                     break;
                                 }
@@ -1795,6 +1962,14 @@ namespace game{
                     if(!touching_tree){
                         current_enemy->x += direction_to_target_x * current_enemy->speed * delta_time;
                         current_enemy->y += direction_to_target_y * current_enemy->speed * delta_time;
+                    }else{
+                        current_enemy->damage_timer -= delta_time;
+
+                        if(current_enemy->damage_timer <= 0.0f){
+                            current_enemy->damage_timer = 
+                                current_enemy->damage_timer_delay;
+                            game_state.tree.health -= current_enemy->damage;
+                        }
                     }
                 }
             }
@@ -1806,8 +1981,10 @@ namespace game{
             ++floating_message_index){
             floating_message* message = 
                 &game_state.floating_messages[floating_message_index];
-            message->lifetime -= delta_time;
-            message->y -= 25 * delta_time;
+            if(message->lifetime > 0.0f){
+                message->lifetime -= delta_time;
+                message->y -= 25 * delta_time;
+            }
         }
 
         // check if game lost
@@ -1879,12 +2056,63 @@ int main(int argc, char** argv){
 
     game::initialize(state, renderer);
 
+    gfx::tree_texture =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/evergreen.png");
+    gfx::tree_texture.pivot_x = 0.5;
+    gfx::tree_texture.pivot_y = 1.0;
+
     gfx::circle_texture = 
         gfx::load_image_to_texture(renderer, "data/circle.png");
 
     gfx::backdrop_texture =
         gfx::load_image_to_texture(renderer, "data/emergency-art/backdrop.png");
 
+    gfx::enemy_cards[0] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/logging_machine_card.png");
+    gfx::enemy_cards[1] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/lumberjack_card.png");
+    gfx::enemy_cards[2] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/fat_lumberjack_card.png");
+    gfx::enemy_cards[3] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/anarchist_card.png");
+
+    gfx::turret_cards[0] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/singleshot_icon.png");
+    gfx::turret_cards[1] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/repeater_icon.png");
+    gfx::turret_cards[2] =
+        gfx::load_image_to_texture(renderer, "data/emergency-art/freezer_icon.png");
+
+    gfx::enemy_textures[0] =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
+    gfx::enemy_textures[0].at_scale = 0.35f;
+    gfx::enemy_textures[0].pivot_x = 0.5f;
+    gfx::enemy_textures[0].pivot_y = 0.95f;
+
+    gfx::enemy_textures[1] =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
+    gfx::enemy_textures[1].at_scale = 0.35f;
+    gfx::enemy_textures[1].pivot_x = 0.5f;
+    gfx::enemy_textures[1].pivot_y = 0.95f;
+
+    gfx::enemy_textures[2] =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/lumberjack.png");
+    gfx::enemy_textures[2].at_scale = 0.80f;
+    gfx::enemy_textures[2].pivot_x = 0.5f;
+    gfx::enemy_textures[2].pivot_y = 0.95f;
+
+    gfx::enemy_textures[3] =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/anarchist.png");
+    gfx::enemy_textures[3].at_scale = 0.35f;
+    gfx::enemy_textures[3].pivot_x = 0.5f;
+    gfx::enemy_textures[3].pivot_y = 0.95f;
+
+    gfx::enemy_textures[4] =
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/logging_machine.png");
+    gfx::enemy_textures[4].at_scale = 0.80f;
+    gfx::enemy_textures[4].pivot_x = 0.35f;
+    gfx::enemy_textures[4].pivot_y = 0.5f;
+     
     // too lazy to implement my
     // own independent resolution.
     //
@@ -1922,7 +2150,7 @@ int main(int argc, char** argv){
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        game::render(state, renderer);
+        game::render(state, renderer, delta_time);
 
         SDL_RenderPresent(renderer);
 
