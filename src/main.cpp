@@ -1061,13 +1061,13 @@ namespace game{
             ++i){
             const float angle = static_cast<int>(rand() % 360+1);
             const float radians = angle * (M_PI / 180.0f);
-            const float radius = 600;
+            const float radius = 740;
 
             push_wave_entry(game_state, 
                     // skip ENEMY_NULL
                     static_cast<enemy_type>(probabilities[clamped_index].randomly_pick()),
-                    (cosf(radians)+1) * radius ,
-                    (sinf(radians)+1) * radius);
+                    (cosf(radians)+0.5) * radius ,
+                    (sinf(radians)+0.5) * radius);
         }
     }
 
@@ -1112,7 +1112,7 @@ namespace game{
             game_state.tree.y = (768 / 2) - (game_state.tree.h/2);
         }
         // should be enough to build a few units or something like that.
-        game_state.points = 5000;
+        game_state.points = 7500;
 
         // null empty every single list...
         {
@@ -1541,7 +1541,7 @@ namespace game{
             750, 750, 750, 750, 1000, 1000, 1250, 1250, 1250, 1400, 1500, 1600, 1700, 1800, 2000
         };
         int clamped_index = clamp<int>(game_state.game_wave, 0, unique_wave_count - 1);
-        game_state.points += (wave_rewards_for_rounds[clamped_index] + 750);
+        game_state.points += (wave_rewards_for_rounds[clamped_index] + 1500);
 
         game_state.reward_flashing_started = true;
         game_state.reward_flash_fx_timer = max_reward_flash_fx_timer;
