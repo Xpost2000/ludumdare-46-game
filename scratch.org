@@ -1,5 +1,15 @@
 Ludum Dare 46 :Scratch Board:
 
+Finished Commentary:
+
+wtf did I do? I basically threw out everything I knew
+about code architecture and went cow-boy mode. I'm surprised
+that it's the state it is considering how I threw everything together.
+Safe to say I'm not trying LD like this again, but this was a great
+experience.
+
+Just wtf. I mean it works mostly.
+
 KEEP IT ALIVE
 
 Game should be called:
@@ -58,14 +68,14 @@ Day 1:[8:00AM - 11:30PM]
 - [ ] Make bigger enemies have the ability to run-over turrets.
 - [ ] Enemy Spawns based on wave so things don't go nuts early on. [ wave based probability? ]
 - [ ] Particle System
-- [ ] Instructions
+- [X] Instructions
 - [ ] Figure damage formula.
 - [ ] Enemies try dodging?
 - [X] Sprites & Animation
 - [ ] Make notification to open show tab disappear.
 - [ ] Game Ending?[OPTIONAL???]
 - [X] Art begins....
-- [ ] Audio production begins....
+- [X] Audio production begins....
 - [X] Game Balance.... [Surprisingly seems playable enough...]
 - [X] Pause Menu...
 - [ ] Upgrade System screen? [ Maybe not upgrade as much as allow you to heal the tree... ]

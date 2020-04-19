@@ -73,6 +73,29 @@ enum font_sizes{
     FONT_SIZE_TYPES
 };
 
+// I think I'm done giving wtfs.
+namespace audio{
+    Mix_Chunk* wave_finished_sound;
+    Mix_Chunk* menu_move_sound; 
+    Mix_Chunk* menu_select_sound; 
+
+    Mix_Music* menu_music;
+    Mix_Music* game_music;
+
+    // required to be global.
+    static size_t audio_cyclic_counter = 0;
+
+    static constexpr size_t MAX_EXPLOSION_SOUNDS = 4;
+    static constexpr size_t MAX_LOGGING_MACHINE_MOVE_SOUNDS = 2;
+    static constexpr size_t MAX_PEW_SOUNDS = 5;
+    static constexpr size_t MAX_TREE_HURT_SOUNDS = 5;
+
+    Mix_Chunk* explosion_sounds[MAX_EXPLOSION_SOUNDS];
+    Mix_Chunk* logging_move_sounds[MAX_LOGGING_MACHINE_MOVE_SOUNDS];
+    Mix_Chunk* pew_sounds[MAX_PEW_SOUNDS];
+    Mix_Chunk* tree_hurt_sounds[MAX_TREE_HURT_SOUNDS];
+}
+
 namespace gfx{
     TTF_Font* fonts[FONT_SIZE_TYPES];
 
@@ -90,6 +113,9 @@ namespace gfx{
         float pivot_y;
     };
 
+    SDL_Texture* audio_playing_texture;
+    SDL_Texture* audio_mute_texture;
+
     SDL_Texture* circle_texture;
     SDL_Texture* backdrop_texture;
     texture_with_origin_info turret_texture;
@@ -105,6 +131,7 @@ namespace gfx{
     texture_with_origin_info enemy_textures[5];
     // matching turret type.
     SDL_Texture* turret_cards[3];
+    SDL_Texture* frame_texture;
 
     SDL_Texture* load_image_to_texture(SDL_Renderer* renderer, const char* path){
         SDL_Surface* surface = IMG_Load(path);
@@ -329,6 +356,7 @@ namespace game{
         float max_lifetime;
         float lifetime;
     };
+    static bool music_playing = true;
 
     // COMMIT DIE????
     // like actually.... WTF??????!!!!
@@ -341,6 +369,7 @@ namespace game{
     // Perlin noise distribution so it doesn't look like poop
     static void sprinkle_in_tilemap(size_t amount, uint8_t what){
         // @TODO jerry: Perlin noise. Blue noise if I can get it...
+        // @Afternotes jerry: So about that noise huh???
     }
 
     static void paint_square_in_tilemap(int x, int y, int w, int h, uint8_t what){
@@ -356,6 +385,7 @@ namespace game{
         GAME_SCREEN_STATE_ATTRACT_MODE,
 
         GAME_SCREEN_STATE_GAMEPLAY,
+        GAME_SCREEN_STATE_INSTRUCTIONS,
         GAME_SCREEN_STATE_GAME_OVER,
         GAME_SCREEN_STATE_PAUSE,
 
@@ -411,6 +441,7 @@ namespace game{
         float damage;
         float defense_damage;
 
+        float freeze_time;
         bool frozen;
     };
 
@@ -458,6 +489,7 @@ namespace game{
         float h;
 
         float speed;
+        bool freeze_on_hit;
 
         // vector.
         float direction_x;
@@ -501,6 +533,9 @@ namespace game{
         int mouse_y;
 
         // WTF?
+        bool m_down;
+
+        // WTF?
         bool escape_down;
         // WTF?
         bool return_down;
@@ -540,7 +575,11 @@ namespace game{
     // wtf?
     static constexpr float max_reward_flash_fx_timer = 0.075f;
 
+    // +1
+    static constexpr size_t max_instruction_pages = 5;
     struct state{
+        // WTF?
+        int instruction_page;
         // WTF?
         int main_menu_option_selection_index;
 
@@ -715,9 +754,8 @@ namespace game{
             }
         }
 
-        // should probably be something else like
-        // based off the targetting range?
-        if(closest_turret_distance <= 150.0f){
+        // will be too hard?
+        if(closest_turret_distance <= 95.0f){
             violating_distance_rule = true;
         }
 
@@ -754,8 +792,8 @@ namespace game{
         switch(type){
             case TURRET_SINGLE_SHOOTER:
             {
-                result.health = 85;
-                result.max_health = 85;
+                result.health = 30;
+                result.max_health = 30;
 
                 result.defense = 20;
                 result.max_defense = 20;
@@ -767,13 +805,13 @@ namespace game{
             break;
             case TURRET_REPEATER:
             {
-                result.health = 120;
-                result.max_health = 120;
+                result.health = 40;
+                result.max_health = 40;
 
                 result.defense = 40;
                 result.max_defense = 40;
 
-                result.cost = 1000;
+                result.cost = 750;
 
                 result.targetting_radius = 250;
                 result.fire_rate_delay = 0.75f;
@@ -781,8 +819,8 @@ namespace game{
             break;
             case TURRET_FREEZER:
             {
-                result.health = 120;
-                result.max_health = 120;
+                result.health = 60;
+                result.max_health = 60;
 
                 result.defense = 40;
                 result.max_defense = 40;
@@ -807,6 +845,9 @@ namespace game{
 
         if(game_state.points - to_place.cost >= 0){
             push_turret_unit(game_state, mouse_x - (to_place.w / 2), mouse_y - (to_place.h / 2), to_place);
+            Mix_PlayChannel(-1, 
+                    audio::explosion_sounds[(audio::audio_cyclic_counter++) % audio::MAX_EXPLOSION_SOUNDS],
+                    0);
         }else{
             push_floating_message(game_state, 
                     mouse_x, mouse_y, 
@@ -831,15 +872,15 @@ namespace game{
         switch(type){
             case ENEMY_BASIC_LUMBERJACK:
             {
-                result.max_health = 100;
-                result.health = 100;
+                result.max_health = 125;
+                result.health = 125;
 
                 result.max_defense = 30;
                 result.defense = 30;
                 result.speed = 1.25f * pixel_speed_scale;
 
                 result.damage_timer_delay = 1.6f;
-                result.damage = 15;
+                result.damage = 20;
                 result.defense_damage = 15;
             }
             break;
@@ -853,14 +894,14 @@ namespace game{
                 result.speed = 2.05f * pixel_speed_scale;
 
                 result.damage_timer_delay = 1.0f;
-                result.damage = 5;
+                result.damage = 10;
                 result.defense_damage = 2;
             }
             break;
             case ENEMY_FAT_LUMBERJACK:
             {
-                result.max_health = 250;
-                result.health = 250;
+                result.max_health = 350;
+                result.health = 350;
 
                 result.max_defense = 85;
                 result.defense = 85;
@@ -869,7 +910,7 @@ namespace game{
                 result.h *= 3;
 
                 result.damage_timer_delay = 3.0f;
-                result.damage = 20;
+                result.damage = 30;
                 result.defense_damage = 15;
             }
             break;
@@ -883,14 +924,14 @@ namespace game{
                 result.speed = 3.15f * pixel_speed_scale;
 
                 result.damage_timer_delay = 0.65;
-                result.damage = 2;
+                result.damage = 5;
                 result.defense_damage = 2;
             }
             break;
             case ENEMY_LOGGING_MACHINES:
             {
-                result.max_health = 400;
-                result.health = 400;
+                result.max_health = 450;
+                result.health = 450;
 
                 result.max_defense = 100;
                 result.defense = 100;
@@ -900,7 +941,7 @@ namespace game{
                 result.h *= 5;
 
                 result.damage_timer_delay = 4.5f;
-                result.damage = 30;
+                result.damage = 40;
                 result.defense_damage = 40;
             }
             break;
@@ -924,9 +965,87 @@ namespace game{
     //
     // I could implement a weighted random list really quickly I guess...
     static void generate_wave(state& game_state){
+        // weird syntax wtf.
+        static struct wave_probabilities{ 
+            int weights[ENEMY_TYPE_COUNT-1]; 
+
+            int randomly_pick(void){
+                int weights_summed = 0;
+
+                for(unsigned weight_index = 0;
+                    weight_index < ENEMY_TYPE_COUNT-1;
+                    ++weight_index){
+                    weights_summed += weights[weight_index];
+                }
+
+                int weight_versus = rand() % weights_summed;
+
+                for(unsigned weight_index = 0;
+                    weight_index < ENEMY_TYPE_COUNT-1;
+                    ++weight_index){
+                    if(weight_versus < weights[weight_index]){
+                        return weight_index+1;
+                    }
+
+                    weight_versus -= weights[weight_index];
+                }
+
+                // should never happen.
+                return -1;
+            }
+
+        }probabilities[unique_wave_count];
+        //wave 1 - 3
+        {
+            for(unsigned i = 0; i < 3; ++i){
+                wave_probabilities* current = &probabilities[i];
+                current->weights[ENEMY_BASIC_LUMBERJACK-1] = 70;
+                current->weights[ENEMY_SKINNY_LUMBERJACK-1] = 40;
+                current->weights[ENEMY_FAT_LUMBERJACK-1] = 15;
+                current->weights[ENEMY_ANARCHIST-1] = 20;
+                current->weights[ENEMY_LOGGING_MACHINES-1] = 5;
+            }
+        }
+
+
+        //wave 3 - 6
+        {
+            for(unsigned i = 2; i < 6; ++i){
+                wave_probabilities* current = &probabilities[i];
+                current->weights[ENEMY_BASIC_LUMBERJACK-1] = 70;
+                current->weights[ENEMY_SKINNY_LUMBERJACK-1] = 40;
+                current->weights[ENEMY_FAT_LUMBERJACK-1] = 20;
+                current->weights[ENEMY_ANARCHIST-1] = 25;
+                current->weights[ENEMY_LOGGING_MACHINES-1] = 10;
+            }
+        }
+
+        //wave 6 - 9
+        {
+            for(unsigned i = 5; i < 9; ++i){
+                wave_probabilities* current = &probabilities[i];
+                current->weights[ENEMY_BASIC_LUMBERJACK-1] = 70;
+                current->weights[ENEMY_SKINNY_LUMBERJACK-1] = 30;
+                current->weights[ENEMY_FAT_LUMBERJACK-1] = 35;
+                current->weights[ENEMY_ANARCHIST-1] = 35;
+                current->weights[ENEMY_LOGGING_MACHINES-1] = 20;
+            }
+        }
+
+        //wave 9 - 15
+        {
+            for(unsigned i = 8; i < 15; ++i){
+                wave_probabilities* current = &probabilities[i];
+                current->weights[ENEMY_BASIC_LUMBERJACK-1] = 80;
+                current->weights[ENEMY_SKINNY_LUMBERJACK-1] = 10;
+                current->weights[ENEMY_FAT_LUMBERJACK-1] = 50;
+                current->weights[ENEMY_ANARCHIST-1] = 45;
+                current->weights[ENEMY_LOGGING_MACHINES-1] = 30;
+            }
+        }
         // 15 unique waves...
         static int wave_enemy_counts[unique_wave_count] = {
-            10, 10, 10, 12, 15, 15, 15, 20, 20, 20, 20, 25, 25, 30, 35
+            15, 15, 15, 20, 20, 22, 24, 25, 25, 30, 30, 35, 35, 40, 45
         };
         int clamped_index = clamp<int>(game_state.game_wave, 0, unique_wave_count-1);
         // Each entry should probably set their own spawn timer
@@ -942,12 +1061,12 @@ namespace game{
             ++i){
             const float angle = static_cast<int>(rand() % 360+1);
             const float radians = angle * (M_PI / 180.0f);
-            const float radius = 550;
+            const float radius = 600;
 
             push_wave_entry(game_state, 
                     // skip ENEMY_NULL
-                    static_cast<enemy_type>(rand() % ENEMY_TYPE_COUNT + 1),
-                    (cosf(radians)+1) * radius,
+                    static_cast<enemy_type>(probabilities[clamped_index].randomly_pick()),
+                    (cosf(radians)+1) * radius ,
                     (sinf(radians)+1) * radius);
         }
     }
@@ -980,8 +1099,8 @@ namespace game{
     static void setup_game(state& game_state){
         // tree init
         {
-            game_state.tree.health = 150;
-            game_state.tree.max_health = 150;
+            game_state.tree.health = 350;
+            game_state.tree.max_health = 350;
 
             game_state.tree.defense = 50;
             game_state.tree.max_defense = 50;
@@ -993,7 +1112,7 @@ namespace game{
             game_state.tree.y = (768 / 2) - (game_state.tree.h/2);
         }
         // should be enough to build a few units or something like that.
-        game_state.points = 3000;
+        game_state.points = 5000;
 
         // null empty every single list...
         {
@@ -1048,6 +1167,41 @@ namespace game{
                         }else if(button == SDL_BUTTON_MIDDLE){
                         }else if(button == SDL_BUTTON_RIGHT){
                             // destroy selected unit and refund.
+                            for(unsigned turret_entry = 0;
+                                turret_entry < MAX_TURRETS_IN_GAME;
+                                ++turret_entry){
+                                turret_unit* current_turret = 
+                                    &game_state.turret_units[turret_entry];
+                                if(current_turret->type != TURRET_NULL){
+                                    aabb current_turret_bounding_box =
+                                    {
+                                        current_turret->x,
+                                        current_turret->y,
+                                        current_turret->w,
+                                        current_turret->h
+                                    };
+
+                                    aabb mouse_bounding_box = 
+                                    {
+                                        mouse_x,
+                                        mouse_y,
+                                        current_turret->w,
+                                        current_turret->h,
+                                    };
+
+                                    if(aabb_intersects(current_turret_bounding_box, mouse_bounding_box)){
+                                        // removing and refunding.
+                                        push_floating_message(game_state, 
+                                                mouse_x, mouse_y, 
+                                                "Removing and refunding unit.", 1.5f);
+                                        current_turret->type = TURRET_NULL;
+                                        game_state.points += current_turret->cost;
+                                        Mix_PlayChannel(-1, 
+                                                audio::explosion_sounds[(audio::audio_cyclic_counter++) % audio::MAX_EXPLOSION_SOUNDS],
+                                                0);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1078,6 +1232,16 @@ namespace game{
             game_state.wave_spawn_list_entry_count = 0;
         }
 #endif
+        if(!game_state.input.m_down &&
+            game_state.last_input.m_down){
+            if(music_playing){
+                Mix_VolumeMusic(0);
+                music_playing = false;
+            }else{
+                Mix_VolumeMusic(MIX_MAX_VOLUME);
+                music_playing = true;
+            }
+        }
 
         if(!game_state.input.escape_down &&
            game_state.last_input.escape_down){
@@ -1088,6 +1252,8 @@ namespace game{
             }else if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 game_state.screen = GAME_SCREEN_STATE_MAIN_MENU;
                 game_state.paused = true;
+            }else if(game_state.screen == GAME_SCREEN_STATE_INSTRUCTIONS){
+                game_state.screen = GAME_SCREEN_STATE_MAIN_MENU;
             }
         }
 
@@ -1107,6 +1273,8 @@ namespace game{
                     break;
                     case 1:
                     {
+                        game_state.screen = GAME_SCREEN_STATE_INSTRUCTIONS;
+                        game_state.instruction_page = 0;
                     }
                     break;
                     case 2:
@@ -1115,8 +1283,10 @@ namespace game{
                     }
                     break;
                 }
+                Mix_PlayChannel(-1, audio::menu_select_sound, 0);
             }else if(game_state.screen == GAME_SCREEN_STATE_GAME_OVER){
                 game_state.screen = GAME_SCREEN_STATE_GAMEPLAY;
+                Mix_PlayChannel(-1, audio::menu_select_sound, 0);
                 setup_game(game_state);
             }else if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 if(!game_state.wave_started){
@@ -1130,7 +1300,13 @@ namespace game{
             if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 if(!game_state.wave_started){
                     game_state.unit_selection.selected_unit--;
+                    Mix_PlayChannel(-1, audio::menu_move_sound, 0);
                 }
+            }else if(game_state.screen == GAME_SCREEN_STATE_INSTRUCTIONS){
+                game_state.instruction_page--;
+                game_state.instruction_page =
+                    clamp<int>(game_state.instruction_page, 0, max_instruction_pages-1);
+                Mix_PlayChannel(-1, audio::menu_move_sound, 0);
             }
         }
 
@@ -1139,7 +1315,13 @@ namespace game{
             if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 if(!game_state.wave_started){
                     game_state.unit_selection.selected_unit++;
+                    Mix_PlayChannel(-1, audio::menu_move_sound, 0);
                 }
+            }else if(game_state.screen == GAME_SCREEN_STATE_INSTRUCTIONS){
+                game_state.instruction_page++;
+                game_state.instruction_page =
+                    clamp<int>(game_state.instruction_page, 0, max_instruction_pages-1);
+                Mix_PlayChannel(-1, audio::menu_move_sound, 0);
             }
         }
 
@@ -1148,6 +1330,7 @@ namespace game{
             if(game_state.screen == GAME_SCREEN_STATE_GAMEPLAY){
                 if(!game_state.wave_started){
                     game_state.show_wave_preview ^= 1;
+                    Mix_PlayChannel(-1, audio::menu_select_sound, 0);
                 }
             }
         }
@@ -1156,9 +1339,9 @@ namespace game{
             game_state.last_input.up_down){
             if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
                 game_state.main_menu_option_selection_index--;
-
                 game_state.main_menu_option_selection_index =
                     clamp<int>(game_state.main_menu_option_selection_index, 0, 2);
+                Mix_PlayChannel(-1, audio::menu_move_sound, 0);
             }
         }
 
@@ -1166,9 +1349,9 @@ namespace game{
             game_state.last_input.down_down){
             if(game_state.screen == GAME_SCREEN_STATE_MAIN_MENU){
                 game_state.main_menu_option_selection_index++;
-
                 game_state.main_menu_option_selection_index =
                     clamp<int>(game_state.main_menu_option_selection_index, 0, 2);
+                Mix_PlayChannel(-1, audio::menu_move_sound, 0);
             }
         }
     }
@@ -1190,6 +1373,11 @@ namespace game{
             }
             break;
 #endif
+            case SDL_SCANCODE_M:
+            {
+                game_state.input.m_down = keydown;
+            }
+            break;
             case SDL_SCANCODE_RETURN:
             {
                 game_state.input.return_down = keydown;
@@ -1287,8 +1475,15 @@ namespace game{
             turret->fire_rate_timer = turret->fire_rate_delay;
             // fire a projectile
             {
+                Mix_PlayChannel(-1, 
+                        audio::pew_sounds[(audio::audio_cyclic_counter++) % audio::MAX_PEW_SOUNDS],
+                        0);
                 turret_projectile projectile = {};
                 projectile.type = PROJECTILE_BULLET;
+
+                if(turret->type == TURRET_FREEZER){
+                    projectile.freeze_on_hit = true;
+                }
 
                 float turret_center_x = turret->x + (turret->w / 2);
                 float turret_center_y = turret->y + (turret->h / 2);
@@ -1304,7 +1499,7 @@ namespace game{
 
                 projectile.speed = 500;
 
-                projectile.damage = 35;
+                projectile.damage = rand() % 20 + 15;
                 projectile.defense_damage = 15;
 
                 // calculate direction it goes.
@@ -1334,7 +1529,7 @@ namespace game{
         }
 
         // perhaps this should grow dynamically each round?
-        static constexpr int square_size = 5;
+        static constexpr int square_size = 6;
         paint_square_in_tilemap(tilemap_width / 2 - (square_size / 2),
                 tilemap_height / 2 - (square_size / 2),
                 square_size,
@@ -1346,11 +1541,250 @@ namespace game{
             750, 750, 750, 750, 1000, 1000, 1250, 1250, 1250, 1400, 1500, 1600, 1700, 1800, 2000
         };
         int clamped_index = clamp<int>(game_state.game_wave, 0, unique_wave_count - 1);
-        game_state.points += wave_rewards_for_rounds[clamped_index];
+        game_state.points += (wave_rewards_for_rounds[clamped_index] + 750);
 
         game_state.reward_flashing_started = true;
         game_state.reward_flash_fx_timer = max_reward_flash_fx_timer;
         game_state.flash_iterations = 0;
+    }
+
+    static void render_instructions(state& game_state, SDL_Renderer* renderer, float delta_time){
+        static float heading_text_scale = 1.0f; 
+        heading_text_scale = sinf(SDL_GetTicks() / 500.0f) + 2.5;
+        render_centered_dynamically_scaled_text(
+                renderer,
+                FONT_SIZE_MEDIUM,
+                heading_text_scale,
+                1024,
+                300,
+                "Instructions / Help",
+                gfx::yellow);
+
+        // I don't feel like implementing word wrap....
+        //
+        // COPY AND PASTE HERE I COME!
+        static constexpr float start_layout_x = 100;
+        static constexpr float start_layout_y = 250;
+        float layout_x = start_layout_x;
+        float layout_y = start_layout_y;
+        constexpr float layout_advance = 32;
+        // no actually. WTF???????
+        switch(game_state.instruction_page){
+            case 0:
+            {
+                static constexpr size_t lines_in_page_one = 9;
+                static char* page_one_lines[lines_in_page_one] = {
+                    "Welcome to _Treewatch_, an ad-hoc tower defense game.",
+                    "You play as a group of unseen environmentalists that",
+                    "decided using turrets would be the best way to",
+                    "defend the last tree on the planet.",
+                    "  ",
+                    "  ",
+                    "The tree-haters are shown on the next page.",
+                    "The UI of this game is controlled with the arrow keys.",
+                    "However the main game is controlled with the mouse."
+                };
+
+
+                for(int i = 0; i < lines_in_page_one; ++i){
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            layout_x, 
+                            layout_y,
+                            page_one_lines[i],
+                            gfx::white);
+                    layout_y += layout_advance;
+                }
+            }
+            break;
+            case 1:
+            {
+                static constexpr size_t lines_in_page_two = 9;
+                static char* page_two_lines[lines_in_page_two] = {
+                    "The opposition to your group of tree huggers are:",
+                    " ",
+                    "Lumberjacks: ",
+                    " ",
+                    " ",
+                    "these guys inexplicably still think it's a good idea",
+                    "to chop trees down. They're generally weak and in 3 sizes.",
+                    "Small, Medium, and Large. Remarkably unremarkable.",
+                    "No trouble for you for sure."
+                };
+
+
+                for(int i = 0; i < lines_in_page_two; ++i){
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            layout_x, 
+                            layout_y,
+                            page_two_lines[i],
+                            gfx::white);
+                    layout_y += layout_advance;
+                }
+
+                gfx::render_textured_rectangle( 
+                        renderer,
+                        gfx::enemy_textures[ENEMY_BASIC_LUMBERJACK - 1].texture,
+                        {
+                        400, 
+                        300,
+                        gfx::enemy_textures[ENEMY_BASIC_LUMBERJACK-1].width * gfx::enemy_textures[ENEMY_BASIC_LUMBERJACK-1].at_scale,
+                        gfx::enemy_textures[ENEMY_BASIC_LUMBERJACK-1].height * gfx::enemy_textures[ENEMY_BASIC_LUMBERJACK-1].at_scale
+                        },
+                        gfx::white
+                        );
+
+/*                 gfx::render_textured_rectangle( */ 
+/*                         renderer, */
+/*                         gfx::enemy_textures[4].texture, */
+/*                         { */
+/*                         400, */ 
+/*                         350, */
+/*                         gfx::enemy_textures[4].width * gfx::enemy_textures[4].at_scale / 2, */
+/*                         gfx::enemy_textures[4].height * gfx::enemy_textures[4].at_scale / 2 */
+/*                         }, */
+/*                         gfx::white */
+/*                         ); */
+            }
+            break;
+            case 2:
+            {
+                static constexpr size_t lines_in_page_three = 7;
+                static char* page_three_lines[lines_in_page_three] = {
+                    "Logging Machines: ",
+                    " ",
+                    " ",
+                    "Somehow these things are actually autonomous.",
+                    "They decided instead of conquering humanity they would",
+                    "destroy the environment to insideously destroy humans.",
+                    "These are moderately tanky and tough. Thankfully uncommon."
+                };
+
+
+                for(int i = 0; i < lines_in_page_three; ++i){
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            layout_x, 
+                            layout_y,
+                            page_three_lines[i],
+                            gfx::white);
+                    layout_y += layout_advance;
+                }
+
+                gfx::render_textured_rectangle( 
+                        renderer,
+                        gfx::enemy_textures[4].texture,
+                        {
+                        400, 
+                        220,
+                        gfx::enemy_textures[4].width * gfx::enemy_textures[4].at_scale / 2,
+                        gfx::enemy_textures[4].height * gfx::enemy_textures[4].at_scale / 2
+                        },
+                        gfx::white
+                        );
+            }
+            break;
+            case 3:
+            {
+                static constexpr size_t lines_in_page_four = 10;
+                static char* page_four_lines[lines_in_page_four] = {
+                    "Anarchists: ",
+                    " ",
+                    " ",
+                    "These punks want to cause chaos for no good reason.",
+                    "They're the fastest of your opposition and can bolt",
+                    "through your defenses, but thankfully they're fragiler",
+                    "than glass.",
+                    "However these punks can instantly destroy your turrets.",
+                    "Somehow they know how to hack your turrets in just the",
+                    "right way that things break..."
+                };
+
+
+                for(int i = 0; i < lines_in_page_four; ++i){
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            layout_x, 
+                            layout_y,
+                            page_four_lines[i],
+                            gfx::white);
+                    layout_y += layout_advance;
+                }
+
+                gfx::render_textured_rectangle( 
+                        renderer,
+                        gfx::enemy_textures[3].texture,
+                        {
+                        400, 
+                        220,
+                        gfx::enemy_textures[3].width * gfx::enemy_textures[3].at_scale,
+                        gfx::enemy_textures[3].height * gfx::enemy_textures[3].at_scale
+                        },
+                        gfx::white
+                        );
+            }
+            break;
+            case 4:
+            {
+                static constexpr size_t lines_in_page_five = 13;
+                static char* page_five_lines[lines_in_page_five] = {
+                    " ",
+                    " ",
+                    "However, you have some low-tech turrets that",
+                    "can stop these baddies.",
+                    " ",
+                    "Singleshooter: $500. Cheap. simple. 'Nuff said.",
+                    " ",
+                    "Repeater: $750. Little pricier. But has a faster firerate",
+                    " ",
+                    "Freezer: $1500. Most expensive, but can slow down your enemies.",
+                    " ",
+                    "How long can you make it with just these?",
+                    "Well, let's see. *END OF MANUAL*"
+                };
+
+
+                for(int i = 0; i < lines_in_page_five; ++i){
+                    gfx::render_text(
+                            renderer,
+                            FONT_SIZE_MEDIUM,
+                            layout_x, 
+                            layout_y,
+                            page_five_lines[i],
+                            gfx::white);
+                    layout_y += layout_advance;
+                }
+
+                for(int i = 0; i < 3; ++i){
+                    gfx::render_textured_rectangle( 
+                            renderer,
+                            gfx::turret_cards[i],
+                            {
+                            350 + (i * 100) + (25 * (i - 1)), 
+                            200,
+                            100,
+                            100
+                            },
+                            gfx::white
+                            );
+                }
+            }
+            break;
+        }
+
+        render_centered_text(
+                renderer,
+                FONT_SIZE_MEDIUM,
+                1024,
+                768 * 2 - 40,
+                "Use arrow keys to navigate <-, ->",
+                gfx::cyan
+                );
     }
 
     static void render_gameover(state& game_state, SDL_Renderer* renderer, float delta_time){
@@ -1496,12 +1930,75 @@ namespace game{
             }
         }
 
+        // draw turrets
+        // these do not have the health bar.
+        // these will be visually redrawn to look different.
+        {
+            for(unsigned turret_entry = 0;
+                turret_entry < MAX_TURRETS_IN_GAME;
+                ++turret_entry){
+                turret_unit* current_unit =
+                    &game_state.turret_units[turret_entry];
+
+                if(current_unit->type != TURRET_NULL){
+                    gfx::color draw_color = gfx::green;
+                    
+                    switch(current_unit->type){
+                        case TURRET_SINGLE_SHOOTER:
+                        {
+                            draw_color = gfx::green;
+                        }
+                        break;
+                        case TURRET_REPEATER:
+                        {
+                            draw_color = gfx::red;
+                        }
+                        break;
+                        case TURRET_FREEZER:
+                        {
+                            draw_color = gfx::cyan;
+                        }
+                        break;
+                    }
+
+                    gfx::render_textured_rectangle(
+                            renderer,
+                            gfx::turret_texture.texture,
+                            { 
+                            current_unit->x + (current_unit->w / 2) -
+                            ((gfx::turret_texture.width * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_x),
+                            current_unit->y + (current_unit->h / 2) -
+                            ((gfx::turret_texture.height * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_y),
+                            gfx::turret_texture.width * gfx::turret_texture.at_scale,
+                            gfx::turret_texture.height * gfx::turret_texture.at_scale
+                            },
+                            draw_color);
+
+#ifdef STUPID_DEBUG
+                    gfx::render_rectangle(renderer, 
+                            {
+                            current_unit->x,
+                            current_unit->y,
+                            current_unit->w,
+                            current_unit->h
+                            },
+                            draw_color);
+#endif
+                }
+            }
+        }
+
         // draw enemies
         {
             for(unsigned enemy_index = 0; enemy_index < MAX_ENEMIES_IN_GAME; ++enemy_index){
                 enemy_entity* current_enemy = &game_state.enemies[enemy_index];
                 if(current_enemy->type != ENEMY_NULL){
                     unsigned enemy_texture_index = (current_enemy->type - 1);
+
+                    gfx::color draw_color = gfx::white;
+                    if(current_enemy->frozen){
+                        draw_color = gfx::cyan;
+                    }
 
                     gfx::render_textured_rectangle( 
                             renderer,
@@ -1514,7 +2011,7 @@ namespace game{
                             gfx::enemy_textures[enemy_texture_index].width * gfx::enemy_textures[enemy_texture_index].at_scale,
                             gfx::enemy_textures[enemy_texture_index].height * gfx::enemy_textures[enemy_texture_index].at_scale
                             },
-                            gfx::white 
+                            draw_color
                             );
 
 #ifdef STUPID_DEBUG
@@ -1573,64 +2070,6 @@ namespace game{
                                 bars_height},
                                 gfx::blue);
                     }
-#endif
-                }
-            }
-        }
-
-        // draw turrets
-        // these do not have the health bar.
-        // these will be visually redrawn to look different.
-        {
-            for(unsigned turret_entry = 0;
-                turret_entry < MAX_TURRETS_IN_GAME;
-                ++turret_entry){
-                turret_unit* current_unit =
-                    &game_state.turret_units[turret_entry];
-
-                if(current_unit->type != TURRET_NULL){
-                    gfx::color draw_color = gfx::green;
-                    
-                    switch(current_unit->type){
-                        case TURRET_SINGLE_SHOOTER:
-                        {
-                            draw_color = gfx::green;
-                        }
-                        break;
-                        case TURRET_REPEATER:
-                        {
-                            draw_color = gfx::red;
-                        }
-                        break;
-                        case TURRET_FREEZER:
-                        {
-                            draw_color = gfx::cyan;
-                        }
-                        break;
-                    }
-
-                    gfx::render_textured_rectangle(
-                            renderer,
-                            gfx::turret_texture.texture,
-                            { 
-                            current_unit->x + (current_unit->w / 2) -
-                            ((gfx::turret_texture.width * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_x),
-                            current_unit->y + (current_unit->h / 2) -
-                            ((gfx::turret_texture.height * gfx::turret_texture.at_scale) * gfx::turret_texture.pivot_y),
-                            gfx::turret_texture.width * gfx::turret_texture.at_scale,
-                            gfx::turret_texture.height * gfx::turret_texture.at_scale
-                            },
-                            draw_color);
-
-#ifdef STUPID_DEBUG
-                    gfx::render_rectangle(renderer, 
-                            {
-                            current_unit->x,
-                            current_unit->y,
-                            current_unit->w,
-                            current_unit->h
-                            },
-                            draw_color);
 #endif
                 }
             }
@@ -1841,11 +2280,6 @@ namespace game{
                     for(unsigned unit_index = TURRET_SINGLE_SHOOTER;
                             unit_index < TURRET_TYPE_COUNT; // TURRET_NULL doesn't count
                             ++unit_index){
-                        gfx::color draw_color = gfx::white;
-                        if((unit_index) == game_state.unit_selection.selected_unit+1){
-                            draw_color = gfx::green;
-                        }
-
                         gfx::rectangle draw_rect =
                         {
                             ui_selection_layout_x,
@@ -1859,8 +2293,17 @@ namespace game{
                                 renderer,
                                 gfx::turret_cards[unit_index-1],
                                 draw_rect,
-                                draw_color
+                                gfx::white
                                 );
+
+                        if((unit_index) == game_state.unit_selection.selected_unit+1){
+                            gfx::render_textured_rectangle( 
+                                    renderer,
+                                    gfx::frame_texture,
+                                    draw_rect,
+                                    gfx::green
+                                    );
+                        }
                     }
 
                     // Annoying.
@@ -1966,7 +2409,9 @@ namespace game{
                     gfx::color draw_color = gfx::white;
                     draw_color.a = 
                         clamp<uint8_t>(255 * percent_clamp, 0, 255);
+#ifdef STUPID_DEBUG
                     fprintf(stderr, "draw_color_a: %d\n", draw_color.a);
+#endif
                     gfx::render_text(
                             renderer,
                             FONT_SIZE_MEDIUM,
@@ -2000,17 +2445,53 @@ namespace game{
                 render_gameover(game_state, renderer, delta_time);
             }
             break;
+            case GAME_SCREEN_STATE_INSTRUCTIONS:
+            {
+                render_instructions(game_state, renderer, delta_time);
+            }
+            break;
             case GAME_SCREEN_STATE_PAUSE:
             {
             }
             break;
         }
+
+        {
+            if(music_playing){
+                gfx::render_textured_rectangle(
+                        renderer,
+                        gfx::audio_playing_texture,
+                        {
+                        0, 0,
+                        64, 64
+                        },
+                        gfx::white
+                        );
+            }else{
+
+                gfx::render_textured_rectangle(
+                        renderer,
+                        gfx::audio_mute_texture,
+                        {
+                        0, 0,
+                        64, 64
+                        },
+                        gfx::white
+                        );
+            }
+        }
+    }
+
+    static void update_instructions(state& game_state, const float delta_time){
     }
 
     static void update_gameover(state& game_state, const float delta_time){
     }
 
     static void update_mainmenu(state& game_state, const float delta_time){
+        if(!Mix_PlayingMusic()){
+            Mix_PlayMusic(audio::menu_music, -1);
+        }
     }
 
     static void update_gameplay(state& game_state, const float delta_time){
@@ -2019,6 +2500,7 @@ namespace game{
                game_state.enemies_in_wave == 0){
                 finished_round(game_state);
                 distribute_reward_for_round(game_state);
+                Mix_PlayChannel(-1, audio::wave_finished_sound, 0);
             }
             // handle wave spawning
             // and other wave logic.
@@ -2065,6 +2547,9 @@ namespace game{
                     if(current_turret->type != TURRET_NULL){
                         current_turret->fire_rate_timer -= delta_time;
 
+                        enemy_entity* closest_enemy = nullptr;
+                        float shortest_distance_between = INFINITY; 
+
                         for(unsigned enemy_index = 0;
                                 enemy_index < MAX_ENEMIES_IN_GAME;
                                 ++enemy_index){
@@ -2073,21 +2558,34 @@ namespace game{
 
                             if(current_enemy->type != ENEMY_NULL &&
                                     current_enemy->health > 0){
+                                {
+                                    float delta_x = current_enemy->x - current_turret->x;
+                                    float delta_y = current_enemy->y - current_turret->y;
 
-                                float delta_x = current_enemy->x - current_turret->x;
-                                float delta_y = current_enemy->y - current_turret->y;
-                                float distance_between_turret_and_enemy =
-                                    sqrtf((delta_y * delta_y) + (delta_x * delta_x));
-
-                                if(distance_between_turret_and_enemy <= current_turret->targetting_radius){
-                                    // it will attempt to fire...
-                                    // if it can...
-                                    turret_fire_projectile_at_point(game_state, current_turret, 
-                                            current_enemy->x + (current_enemy->w / 2), 
-                                            current_enemy->y + (current_enemy->h / 2));
+                                    float distance = sqrtf((delta_x * delta_x) + (delta_y * delta_y));
+                                    if(distance <= shortest_distance_between){
+                                        shortest_distance_between = distance;
+                                        closest_enemy = current_enemy;
+                                    }
                                 }
                             }
+                            //???
                         } 
+                        //????
+                        if(closest_enemy){
+                            float delta_x = closest_enemy->x - current_turret->x;
+                            float delta_y = closest_enemy->y - current_turret->y;
+                            float distance_between_turret_and_enemy =
+                                sqrtf((delta_y * delta_y) + (delta_x * delta_x));
+
+                            if(distance_between_turret_and_enemy <= current_turret->targetting_radius){
+                                // it will attempt to fire...
+                                // if it can...
+                                turret_fire_projectile_at_point(game_state, current_turret, 
+                                        closest_enemy->x + (closest_enemy->w / 2), 
+                                        closest_enemy->y + (closest_enemy->h / 2));
+                            }
+                        }
                     }
                 }
             }
@@ -2119,10 +2617,8 @@ namespace game{
                                 ++enemy_index){
                             enemy_entity* current_enemy =
                                 &game_state.enemies[enemy_index];
-
                             if(current_enemy->type != ENEMY_NULL &&
-                                    current_enemy->health > 0){
-
+                               current_enemy->health > 0){
                                 aabb enemy_bounding_box =
                                 {
                                     current_enemy->x,
@@ -2138,11 +2634,19 @@ namespace game{
                                     projectile->lifetime = 0;
 
                                     current_enemy->health -= projectile->damage;
+                                    Mix_PlayChannel(-1, 
+                                            audio::tree_hurt_sounds[(audio::audio_cyclic_counter++) % audio::MAX_TREE_HURT_SOUNDS],
+                                            0);
+                                    if(projectile->freeze_on_hit){
+                                        current_enemy->freeze_time = 2.5f;
+                                        current_enemy->frozen = true;
+                                    }
 
                                     break;
                                 }
                             }
                         } 
+                        //??
                     }
                 }
             }
@@ -2166,6 +2670,12 @@ namespace game{
                         }
                         continue;
                     }
+
+                    current_enemy->freeze_time -= delta_time;
+                    if(current_enemy->freeze_time <= 0.0f){
+                        current_enemy->frozen = false;
+                    }
+
                     tree_entity* target = &game_state.tree;
 
                     float direction_to_target_x = 0;
@@ -2188,18 +2698,77 @@ namespace game{
                     };
 
                     bool touching_tree = aabb_intersects(enemy_bounding_box, tree_bounding_box);
+                    bool touched_turret = false;
+
+                    current_enemy->damage_timer -= delta_time;
 
                     if(!touching_tree){
-                        current_enemy->x += direction_to_target_x * current_enemy->speed * delta_time;
-                        current_enemy->y += direction_to_target_y * current_enemy->speed * delta_time;
-                    }else{
-                        current_enemy->damage_timer -= delta_time;
+                        // see if I hit a turret
+                        for(unsigned turret_index = 0;
+                            turret_index < MAX_TURRETS_IN_GAME;
+                            ++turret_index){
+                            turret_unit* current_turret =
+                                &game_state.turret_units[turret_index];
 
+                            if(current_turret->health <= 0.0f){
+                                if(current_turret->type != TURRET_NULL){
+                                    current_turret->type = TURRET_NULL;
+                                    Mix_PlayChannel(-1, 
+                                            audio::explosion_sounds[(audio::audio_cyclic_counter++) % audio::MAX_EXPLOSION_SOUNDS],
+                                            0);
+                                    continue;
+                                }
+                            }
+
+                            if(current_turret->type != TURRET_NULL){
+                                aabb turret_bounding_box =
+                                {
+                                    current_turret->x,
+                                    current_turret->y,
+                                    current_turret->w,
+                                    current_turret->h
+                                };
+
+                                bool touching_turret = aabb_intersects(turret_bounding_box, enemy_bounding_box);
+
+                                if(touching_turret){
+                                    touched_turret = touching_turret;
+                                    if(current_enemy->damage_timer <= 0.0f){
+                                        //anarchists can instantly disable turrets.
+                                        if(current_enemy->type == ENEMY_ANARCHIST){
+                                            current_turret->health = 0;
+                                        }else{
+                                            current_enemy->damage_timer = 
+                                                current_enemy->damage_timer_delay;
+                                            current_turret->health -= current_enemy->damage;
+                                        }
+
+                                        Mix_PlayChannel(-1, 
+                                                audio::tree_hurt_sounds[(audio::audio_cyclic_counter++) % audio::MAX_TREE_HURT_SOUNDS],
+                                                0);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }else{
                         if(current_enemy->damage_timer <= 0.0f){
                             current_enemy->damage_timer = 
                                 current_enemy->damage_timer_delay;
                             game_state.tree.health -= current_enemy->damage;
+                            Mix_PlayChannel(-1, 
+                                    audio::tree_hurt_sounds[(audio::audio_cyclic_counter++) % audio::MAX_TREE_HURT_SOUNDS],
+                                    0);
                         }
+                    }
+
+                    if(!touching_tree && !touched_turret){
+                        float speed = current_enemy->speed;
+                        if(current_enemy->frozen){
+                            speed /= 2.5f;
+                        }
+                        current_enemy->x += direction_to_target_x * speed * delta_time;
+                        current_enemy->y += direction_to_target_y * speed * delta_time;
                     }
                 }
             }
@@ -2233,8 +2802,14 @@ namespace game{
                 update_mainmenu(game_state, delta_time);
             }
             break;
+            case GAME_SCREEN_STATE_INSTRUCTIONS:
+            {
+                update_instructions(game_state, delta_time);
+            }
+            break;
             case GAME_SCREEN_STATE_ATTRACT_MODE:
             {
+                // Pfft... What attract mode?
             }
             break;
             case GAME_SCREEN_STATE_GAMEPLAY:
@@ -2249,6 +2824,7 @@ namespace game{
             break;
             case GAME_SCREEN_STATE_PAUSE:
             {
+                // Used a flag instead.
             }
             break;
         }
@@ -2257,7 +2833,7 @@ namespace game{
 }
 
 int main(int argc, char** argv){
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_EVERYTHING);
     IMG_Init(IMG_INIT_PNG);
     Mix_Init(MIX_INIT_OGG);
     Mix_OpenAudio(MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 2048);
@@ -2271,7 +2847,7 @@ int main(int argc, char** argv){
                 SDL_WINDOWPOS_CENTERED,
                 window_width,
                 window_height,
-                SDL_WINDOW_SHOWN
+                SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP
                 );
     SDL_Renderer* renderer =
         SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -2285,6 +2861,15 @@ int main(int argc, char** argv){
     game::state state = {};
 
     game::initialize(state, renderer);
+
+    audio::wave_finished_sound =
+        Mix_LoadWAV("data/sound/wave_finished.wav");
+
+    audio::menu_move_sound =
+        Mix_LoadWAV("data/sound/menu_move.wav");
+
+    audio::menu_select_sound =
+        Mix_LoadWAV("data/sound/menu_select.wav");
 
     gfx::tree_texture =
         gfx::load_image_to_texture_with_origin_info(renderer, "data/evergreen.png");
@@ -2303,21 +2888,24 @@ int main(int argc, char** argv){
     gfx::turret_texture.pivot_x = 0.5f;
     gfx::turret_texture.pivot_y = 0.5f;
 
+    gfx::frame_texture =
+        gfx::load_image_to_texture(renderer, "data/frame.png");
+
     gfx::enemy_cards[0] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/logging_machine_card.png");
+        gfx::load_image_to_texture(renderer, "data/logging_machine_card.png");
     gfx::enemy_cards[1] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/lumberjack_card.png");
+        gfx::load_image_to_texture(renderer, "data/lumberjack_card.png");
     gfx::enemy_cards[2] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/fat_lumberjack_card.png");
+        gfx::load_image_to_texture(renderer, "data/fat_lumberjack_card.png");
     gfx::enemy_cards[3] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/anarchist_card.png");
+        gfx::load_image_to_texture(renderer, "data/anarchist_card.png");
 
     gfx::turret_cards[0] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/singleshot_icon.png");
+        gfx::load_image_to_texture(renderer, "data/singleshooter_icon.png");
     gfx::turret_cards[1] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/repeater_icon.png");
+        gfx::load_image_to_texture(renderer, "data/repeater_icon.png");
     gfx::turret_cards[2] =
-        gfx::load_image_to_texture(renderer, "data/emergency-art/freezer_icon.png");
+        gfx::load_image_to_texture(renderer, "data/freezer_icon.png");
 
     gfx::enemy_textures[0] =
         gfx::load_image_to_texture_with_origin_info(renderer, "data/lumberjack.png");
@@ -2341,13 +2929,71 @@ int main(int argc, char** argv){
         gfx::load_image_to_texture_with_origin_info(renderer, "data/anarchist.png");
     gfx::enemy_textures[3].at_scale = 0.35f;
     gfx::enemy_textures[3].pivot_x = 0.5f;
-    gfx::enemy_textures[3].pivot_y = 0.5f;
+    gfx::enemy_textures[3].pivot_y = 0.7f;
 
     gfx::enemy_textures[4] =
-        gfx::load_image_to_texture_with_origin_info(renderer, "data/emergency-art/logging_machine.png");
+        gfx::load_image_to_texture_with_origin_info(renderer, "data/logging_machine.png");
     gfx::enemy_textures[4].at_scale = 0.80f;
-    gfx::enemy_textures[4].pivot_x = 0.35f;
+    gfx::enemy_textures[4].pivot_x = 0.4f;
     gfx::enemy_textures[4].pivot_y = 0.5f;
+
+    {
+        gfx::audio_playing_texture = 
+            gfx::load_image_to_texture(renderer, "data/audio_playing.png");
+        gfx::audio_mute_texture = 
+            gfx::load_image_to_texture(renderer, "data/audio_mute.png");
+    }
+
+    // initialize all audio...
+    // wtf... wtf. 
+    {
+        using namespace audio;
+        Mix_Volume(-1, MIX_MAX_VOLUME / 4);
+        {
+            menu_music =
+                Mix_LoadMUS("data/sound/menuloop.ogg");
+        }  
+        {
+            explosion_sounds[0] =
+                Mix_LoadWAV("data/sound/explosion_a.wav");
+            explosion_sounds[1] =
+                Mix_LoadWAV("data/sound/explosion_b.wav");
+            explosion_sounds[2] =
+                Mix_LoadWAV("data/sound/explosion_c.wav");
+            explosion_sounds[3] =
+                Mix_LoadWAV("data/sound/explosion_d.wav");
+        }
+        {
+            logging_move_sounds[0] =
+                Mix_LoadWAV("data/sound/logging_machine_move.wav");
+            logging_move_sounds[1] =
+                Mix_LoadWAV("data/sound/logging_machine_move_b.wav");
+        }
+        {
+            pew_sounds[0] =
+                Mix_LoadWAV("data/sound/pew_a.wav");
+            pew_sounds[1] =
+                Mix_LoadWAV("data/sound/pew_b.wav");
+            pew_sounds[2] =
+                Mix_LoadWAV("data/sound/pew_c.wav");
+            pew_sounds[3] =
+                Mix_LoadWAV("data/sound/pew_d.wav");
+            pew_sounds[4] =
+                Mix_LoadWAV("data/sound/pew_e.wav");
+        }
+        {
+            tree_hurt_sounds[0] =
+                Mix_LoadWAV("data/sound/tree_hurt_a.wav");
+            tree_hurt_sounds[1] =
+                Mix_LoadWAV("data/sound/tree_hurt_b.wav");
+            tree_hurt_sounds[2] =
+                Mix_LoadWAV("data/sound/tree_hurt_c.wav");
+            tree_hurt_sounds[3] =
+                Mix_LoadWAV("data/sound/tree_hurt_d.wav");
+            tree_hurt_sounds[4] =
+                Mix_LoadWAV("data/sound/tree_hurt_e.wav");
+        }
+    }
      
     // too lazy to implement my
     // own independent resolution.
@@ -2397,7 +3043,7 @@ int main(int argc, char** argv){
 
         // last thing I'll do lmao
         delta_time = (difference / 1000.0f);
-        delta_time = 1.0f / 60.0f;
+        /* delta_time = 1.0f / 60.0f; */
     }
 
     Mix_CloseAudio();
